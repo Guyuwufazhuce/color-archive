@@ -2,6 +2,7 @@
 
 import type { ColorCategory, ImageData } from "@/lib/types";
 import { CATEGORY_LABELS, CATEGORY_ORDER } from "@/lib/types";
+import { useLanguage } from "@/lib/LanguageContext";
 
 interface ImageCardProps {
   image: ImageData;
@@ -20,6 +21,7 @@ export default function ImageCard({
 }: ImageCardProps) {
   const primaryColor = image.dominantColors[0];
   const category = image.manualCategory ?? image.category;
+  const { t } = useLanguage();
 
   return (
     <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100 break-inside-avoid mb-4">
@@ -33,7 +35,7 @@ export default function ImageCard({
         <button
           onClick={() => onDelete(image.id)}
           className="absolute top-2 right-2 w-7 h-7 rounded-full bg-black/50 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/70 text-sm"
-          title="Delete"
+          title={t("imageCard.deleteTitle")}
         >
           ✕
         </button>
@@ -41,7 +43,7 @@ export default function ImageCard({
         {/* Published badge */}
         {image.published && (
           <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-green-500/80 text-white text-[10px] font-medium">
-            Published
+            {t("imageCard.published")}
           </div>
         )}
       </div>
@@ -95,7 +97,7 @@ export default function ImageCard({
             disabled={publishing}
             className="w-full text-xs px-3 py-1.5 rounded-lg bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
           >
-            {publishing ? "Publishing..." : "Publish to Gallery"}
+            {publishing ? t("imageCard.publishing") : t("imageCard.publishToGallery")}
           </button>
         )}
       </div>

@@ -5,14 +5,16 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import type { PhotoRecord } from "@/lib/types";
-import { CATEGORY_ORDER, CATEGORY_LABELS, CATEGORY_COLORS } from "@/lib/types";
+import { CATEGORY_COLORS } from "@/lib/types";
 import AdsPlaceholder from "@/components/AdsPlaceholder";
+import { useLanguage } from "@/lib/LanguageContext";
 
 export default function SearchClient() {
   const searchParams = useSearchParams();
   const query = searchParams.get("q") || "";
   const [results, setResults] = useState<PhotoRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const { t } = useLanguage();
 
   useEffect(() => {
     if (!query) {
@@ -44,7 +46,6 @@ export default function SearchClient() {
 
       // If no results, try matching by color family
       if (!exact || exact.length === 0) {
-        // Check if the hex corresponds to a known color family
         const matchingFamily = Object.entries(CATEGORY_COLORS).find(
           ([_, familyHex]) => familyHex.toLowerCase().includes(hexLower) || hexLower.includes(familyHex.replace("#", ""))
         );
@@ -71,35 +72,34 @@ export default function SearchClient() {
     <div className="max-w-6xl mx-auto px-4 py-12">
       <div className="mb-8">
         <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">
-          Search Results
+          {t("search.title")}
         </h1>
         {query && (
           <p className="mt-2 text-sm text-gray-500">
-            Photos matching color{" "}
-            <span className="font-mono font-medium text-gray-700">{query}</span>
+            {t("search.subtitle", { query })}
           </p>
         )}
       </div>
 
       {loading && (
         <div className="text-center py-16 text-sm text-gray-400">
-          Searching...
+          {t("search.searching")}
         </div>
       )}
 
       {!loading && results.length === 0 && (
         <div className="text-center py-16">
           <p className="text-sm text-gray-400 mb-2">
-            No photos found for &ldquo;{query}&rdquo;
+            {t("search.noResults", { query })}
           </p>
           <p className="text-xs text-gray-400">
-            Try searching with a HEX color like{" "}
+            {t("search.trySearch")}{" "}
             <Link href="/search?q=%23ff0000" className="text-blue-500 hover:underline">
               #ff0000
             </Link>{" "}
-            or browse{" "}
+            {t("search.orBrowse")}{" "}
             <Link href="/gallery" className="text-blue-500 hover:underline">
-              all photos
+              {t("search.allPhotos")}
             </Link>
             .
           </p>

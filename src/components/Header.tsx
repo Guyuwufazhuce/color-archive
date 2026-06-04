@@ -4,11 +4,14 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useState, FormEvent } from "react";
 import { siteConfig } from "@/data/siteConfig";
+import LanguageSwitcher from "@/components/LanguageSwitcher";
+import { useLanguage } from "@/lib/LanguageContext";
 
 export default function Header() {
   const pathname = usePathname();
   const router = useRouter();
   const [searchValue, setSearchValue] = useState("");
+  const { t } = useLanguage();
 
   const handleSearch = (e: FormEvent) => {
     e.preventDefault();
@@ -32,7 +35,7 @@ export default function Header() {
         <form onSubmit={handleSearch} className="flex-1 max-w-xs hidden sm:block">
           <input
             type="search"
-            placeholder="Search HEX… (#ff0000)"
+            placeholder={t("header.searchPlaceholder")}
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
             className="w-full text-xs bg-white border border-gray-200 rounded-full px-3 py-1.5 text-gray-700 placeholder-gray-400 focus:outline-none focus:border-gray-400 transition-colors"
@@ -45,6 +48,7 @@ export default function Header() {
               item.href === "/"
                 ? pathname === "/"
                 : pathname.startsWith(item.href);
+            const key = item.href.replace("/", "") || "home";
             return (
               <Link
                 key={item.href}
@@ -55,17 +59,18 @@ export default function Header() {
                     : "text-gray-500 hover:text-gray-800"
                 }`}
               >
-                {item.label}
+                {t(`nav.${key}`)}
               </Link>
             );
           })}
+          <LanguageSwitcher />
         </nav>
 
         {/* Mobile search */}
         <form onSubmit={handleSearch} className="sm:hidden">
           <input
             type="search"
-            placeholder="#ff0000"
+            placeholder={t("header.searchPlaceholderMobile")}
             value={searchValue}
             onChange={(e) => setSearchValue(e.target.value)}
             className="w-24 text-xs bg-white border border-gray-200 rounded-full px-2 py-1.5 text-gray-700 placeholder-gray-400 focus:outline-none focus:border-gray-400 transition-colors"

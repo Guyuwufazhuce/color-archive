@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { PhotoRecord } from "@/lib/types";
 import { supabase } from "@/lib/supabase/client";
 import AdsPlaceholder from "@/components/AdsPlaceholder";
+import { useLanguage } from "@/lib/LanguageContext";
 
 const PAGE_SIZE = 24;
 
@@ -14,6 +15,7 @@ export default function GalleryClient() {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const { t } = useLanguage();
 
   const loadPhotos = useCallback(async (pageNum: number) => {
     const from = pageNum * PAGE_SIZE;
@@ -74,12 +76,15 @@ export default function GalleryClient() {
     <div className="max-w-6xl mx-auto px-4 py-12">
       <div className="mb-8">
         <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
-          Gallery
+          {t("gallery.title")}
         </h1>
         <p className="mt-2 text-sm text-gray-500">
-          All community photos organized by color. Upload yours to contribute.
+          {t("gallery.subtitle")}
         </p>
       </div>
+
+      {/* Ad — top of gallery */}
+      <AdsPlaceholder format="banner" className="mb-8" />
 
       <div className="columns-2 sm:columns-3 md:columns-4 gap-4">
         {photos.map((photo) => (
@@ -116,23 +121,22 @@ export default function GalleryClient() {
 
       {loading && (
         <div className="text-center py-8 text-sm text-gray-400">
-          Loading photos...
+          {t("gallery.loading")}
         </div>
       )}
 
       {!loading && photos.length === 0 && (
         <div className="text-center py-16 text-sm text-gray-400">
-          No photos yet. Be the first to upload!
+          {t("gallery.empty")}
         </div>
       )}
 
       {!hasMore && photos.length > 0 && (
         <div className="text-center py-8 text-xs text-gray-400">
-          You&apos;ve reached the end — check back for new uploads
+          {t("gallery.end")}
         </div>
       )}
 
-      <AdsPlaceholder format="banner" className="mt-10" />
     </div>
   );
 }

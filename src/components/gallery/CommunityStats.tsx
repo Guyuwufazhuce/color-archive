@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
 import { CATEGORY_ORDER } from "@/lib/types";
+import { useLanguage } from "@/lib/LanguageContext";
 
 export default function CommunityStats() {
   const [totalPhotos, setTotalPhotos] = useState<number | null>(null);
   const [colorCounts, setColorCounts] = useState<Record<string, number>>({});
+  const { t } = useLanguage();
 
   useEffect(() => {
     async function load() {
@@ -38,13 +40,13 @@ export default function CommunityStats() {
       <div className="bg-white rounded-2xl border border-gray-100 p-6 sm:p-8">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-base font-semibold text-gray-900">
-            Community Stats
+            {t("communityStats.title")}
           </h2>
           <Link
             href="/gallery"
             className="text-xs text-gray-500 hover:text-gray-800 transition-colors"
           >
-            View gallery →
+            {t("communityStats.viewGallery")}
           </Link>
         </div>
 
@@ -54,7 +56,9 @@ export default function CommunityStats() {
             <div className="text-2xl font-semibold text-gray-900">
               {totalPhotos.toLocaleString()}
             </div>
-            <div className="text-[11px] text-gray-400 mt-1">Total Photos</div>
+            <div className="text-[11px] text-gray-400 mt-1">
+              {t("communityStats.totalPhotos")}
+            </div>
           </div>
 
           {/* Color active count */}
@@ -62,7 +66,9 @@ export default function CommunityStats() {
             <div className="text-2xl font-semibold text-gray-900">
               {Object.values(colorCounts).filter((c) => c > 0).length}
             </div>
-            <div className="text-[11px] text-gray-400 mt-1">Active Colors</div>
+            <div className="text-[11px] text-gray-400 mt-1">
+              {t("communityStats.activeColors")}
+            </div>
           </div>
 
           {/* Per-color counts */}
@@ -79,7 +85,7 @@ export default function CommunityStats() {
                   {count}
                 </div>
                 <div className="text-[11px] text-gray-400 mt-1 capitalize">
-                  {cat}
+                  {t(`colorFamilies.${cat}`)}
                 </div>
               </Link>
             );

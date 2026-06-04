@@ -1,7 +1,14 @@
+"use client";
+
 import Link from "next/link";
 import { siteConfig } from "@/data/siteConfig";
+import { useLanguage } from "@/lib/LanguageContext";
 
-export default function Footer() {
+export default function FooterContent() {
+  const { t } = useLanguage();
+
+  const colors = ["red", "blue", "green", "yellow", "purple", "pink"];
+
   return (
     <footer className="border-t border-gray-100 mt-20">
       <div className="max-w-6xl mx-auto px-4 py-10">
@@ -15,24 +22,24 @@ export default function Footer() {
               {siteConfig.name}
             </Link>
             <p className="text-xs text-gray-400 mt-2 leading-relaxed max-w-xs">
-              {siteConfig.footer.description}
+              {t("footer.description")}
             </p>
           </div>
 
           {/* Pages */}
           <div>
             <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-3">
-              Pages
+              {t("footer.pages")}
             </h3>
             <div className="flex flex-col gap-2">
               <Link href="/" className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                Home
+                {t("nav.home")}
               </Link>
               <Link href="/colors" className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                Colors
+                {t("nav.colors")}
               </Link>
               <Link href="/guide" className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                Guides
+                {t("nav.guides")}
               </Link>
             </div>
           </div>
@@ -40,16 +47,16 @@ export default function Footer() {
           {/* Colors */}
           <div>
             <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-3">
-              Colors
+              {t("footer.colors")}
             </h3>
             <div className="flex flex-col gap-2">
-              {["red", "blue", "green", "yellow", "purple", "pink"].map((c) => (
+              {colors.map((c) => (
                 <Link
                   key={c}
                   href={`/colors/${c}`}
                   className="text-xs text-gray-400 hover:text-gray-600 transition-colors capitalize"
                 >
-                  {c}
+                  {t(`colorFamilies.${c}`)}
                 </Link>
               ))}
             </div>
@@ -58,17 +65,17 @@ export default function Footer() {
           {/* About */}
           <div>
             <h3 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-3">
-              Company
+              {t("footer.company")}
             </h3>
             <div className="flex flex-col gap-2">
               <Link href="/about" className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                About
+                {t("nav.about")}
               </Link>
               <Link href="/contact" className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                Contact
+                {t("nav.contact")}
               </Link>
               <Link href="/privacy" className="text-xs text-gray-400 hover:text-gray-600 transition-colors">
-                Privacy Policy
+                {t("footer.privacyPolicy")}
               </Link>
             </div>
           </div>

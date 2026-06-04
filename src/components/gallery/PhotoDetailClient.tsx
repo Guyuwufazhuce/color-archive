@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import type { PhotoRecord } from "@/lib/types";
-import { CATEGORY_LABELS, CATEGORY_COLORS } from "@/lib/types";
+import { CATEGORY_COLORS } from "@/lib/types";
 import AdsPlaceholder from "@/components/AdsPlaceholder";
+import { useLanguage } from "@/lib/LanguageContext";
 
 export default function PhotoDetailClient({
   photo,
@@ -12,8 +13,9 @@ export default function PhotoDetailClient({
   photo: PhotoRecord;
   related: PhotoRecord[];
 }) {
+  const { t } = useLanguage();
   const family = photo.color_family;
-  const label = CATEGORY_LABELS[family] || family;
+  const label = t(`colorFamilies.${family}`);
   const hex = CATEGORY_COLORS[family] || "#000";
   const createdDate = new Date(photo.created_at).toLocaleDateString("en-US", {
     year: "numeric",
@@ -26,7 +28,7 @@ export default function PhotoDetailClient({
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-xs text-gray-400 mb-6">
         <Link href="/gallery" className="hover:text-gray-600 transition-colors">
-          Gallery
+          {t("photoDetail.gallery")}
         </Link>
         <span>/</span>
         <Link
@@ -57,7 +59,7 @@ export default function PhotoDetailClient({
         <div className="space-y-6">
           <div>
             <h1 className="text-lg font-semibold text-gray-900 mb-4">
-              Photo Details
+              {t("photoDetail.details")}
             </h1>
 
             {/* Color info card */}
@@ -68,7 +70,9 @@ export default function PhotoDetailClient({
                   style={{ backgroundColor: photo.dominant_hex }}
                 />
                 <div>
-                  <div className="text-xs text-gray-400">Dominant Color</div>
+                  <div className="text-xs text-gray-400">
+                    {t("photoDetail.dominantColor")}
+                  </div>
                   <div className="text-sm font-medium text-gray-900 font-mono">
                     {photo.dominant_hex}
                   </div>
@@ -85,7 +89,9 @@ export default function PhotoDetailClient({
                   </span>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-400">Color Family</div>
+                  <div className="text-xs text-gray-400">
+                    {t("photoDetail.colorFamily")}
+                  </div>
                   <Link
                     href={`/collection/${family}`}
                     className="text-sm font-medium text-gray-900 hover:underline"
@@ -96,14 +102,13 @@ export default function PhotoDetailClient({
               </div>
 
               <div className="pt-2 border-t border-gray-50">
-                <div className="text-xs text-gray-400">Uploaded</div>
+                <div className="text-xs text-gray-400">
+                  {t("photoDetail.uploaded")}
+                </div>
                 <div className="text-sm text-gray-700">{createdDate}</div>
               </div>
             </div>
           </div>
-
-          {/* Ad slot */}
-          <AdsPlaceholder format="rectangle" />
 
           {/* Schema.org */}
           <script
@@ -130,7 +135,7 @@ export default function PhotoDetailClient({
               style={{ backgroundColor: hex }}
             />
             <h2 className="text-sm font-semibold text-gray-700">
-              More in {label}
+              {t("photoDetail.moreIn", { label })}
             </h2>
           </div>
           <div className="columns-2 sm:columns-3 md:columns-4 gap-4">
@@ -153,6 +158,9 @@ export default function PhotoDetailClient({
           </div>
         </section>
       )}
+
+      {/* Ad — bottom of photo detail page */}
+      <AdsPlaceholder format="leaderboard" className="mt-10" />
     </div>
   );
 }

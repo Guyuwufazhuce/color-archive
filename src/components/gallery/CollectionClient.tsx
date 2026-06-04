@@ -4,8 +4,9 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import Link from "next/link";
 import type { PhotoRecord, ColorCategory } from "@/lib/types";
 import { supabase } from "@/lib/supabase/client";
-import { CATEGORY_LABELS, CATEGORY_COLORS, CATEGORY_ORDER } from "@/lib/types";
+import { CATEGORY_COLORS, CATEGORY_ORDER } from "@/lib/types";
 import AdsPlaceholder from "@/components/AdsPlaceholder";
+import { useLanguage } from "@/lib/LanguageContext";
 
 const PAGE_SIZE = 24;
 
@@ -19,9 +20,10 @@ export default function CollectionClient({
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const { t } = useLanguage();
 
   const category = colorSlug as ColorCategory;
-  const label = CATEGORY_LABELS[category] || colorSlug;
+  const label = t(`colorFamilies.${category}`);
   const colorHex = CATEGORY_COLORS[category] || "#000";
 
   const loadPhotos = useCallback(async (pageNum: number) => {
@@ -91,11 +93,11 @@ export default function CollectionClient({
             style={{ backgroundColor: colorHex }}
           />
           <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 tracking-tight">
-            {label} Collection
+            {t("collection.title", { label })}
           </h1>
         </div>
         <p className="text-sm text-gray-500">
-          Browse {label.toLowerCase()} photos submitted by the community.
+          {t("collection.subtitle", { label: label.toLowerCase() })}
         </p>
       </div>
 
@@ -111,7 +113,7 @@ export default function CollectionClient({
               className="w-2 h-2 rounded-full"
               style={{ backgroundColor: CATEGORY_COLORS[c] }}
             />
-            {CATEGORY_LABELS[c]}
+            {t(`colorFamilies.${c}`)}
           </Link>
         ))}
       </div>
@@ -151,19 +153,19 @@ export default function CollectionClient({
 
       {loading && (
         <div className="text-center py-8 text-sm text-gray-400">
-          Loading...
+          {t("collection.loading")}
         </div>
       )}
 
       {!loading && photos.length === 0 && (
         <div className="text-center py-16 text-sm text-gray-400">
-          No {label.toLowerCase()} photos yet. Upload one to start the collection!
+          {t("collection.empty", { label: label.toLowerCase() })}
         </div>
       )}
 
       {!hasMore && photos.length > 0 && (
         <div className="text-center py-8 text-xs text-gray-400">
-          You&apos;ve reached the end
+          {t("collection.end")}
         </div>
       )}
 

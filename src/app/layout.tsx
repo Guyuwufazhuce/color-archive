@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Header from "@/components/Header";
-import Footer from "@/components/Footer";
+import FooterContent from "@/components/Footer";
+import { LanguageProvider } from "@/lib/LanguageContext";
 import { siteConfig } from "@/data/siteConfig";
 
 export const metadata: Metadata = {
@@ -53,6 +54,14 @@ export default function RootLayout({
             }}
           />
         )}
+        {/* Google AdSense — loaded only when client ID is configured */}
+        {process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID && (
+          <script
+            async
+            src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID}`}
+            crossOrigin="anonymous"
+          />
+        )}
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{
@@ -69,9 +78,11 @@ export default function RootLayout({
         />
       </head>
       <body className="bg-[#f8f9fa] text-gray-900 antialiased min-h-screen flex flex-col">
-        <Header />
-        <main className="flex-1">{children}</main>
-        <Footer />
+        <LanguageProvider>
+          <Header />
+          <main className="flex-1">{children}</main>
+          <FooterContent />
+        </LanguageProvider>
       </body>
     </html>
   );

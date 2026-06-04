@@ -13,6 +13,7 @@ import {
   CATEGORY_LABELS,
   CATEGORY_ORDER,
 } from "@/lib/types";
+import { useLanguage } from "@/lib/LanguageContext";
 
 const STORAGE_KEY = "color-archive-images";
 
@@ -33,6 +34,7 @@ export default function HomeClient() {
   );
   const [processing, setProcessing] = useState(false);
   const [publishingIds, setPublishingIds] = useState<Set<string>>(new Set());
+  const { t } = useLanguage();
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -106,10 +108,10 @@ export default function HomeClient() {
   }, []);
 
   const handleClearAll = useCallback(() => {
-    if (confirm("Clear all images?")) {
+    if (confirm(t("home.confirmClear"))) {
       setImages([]);
     }
-  }, []);
+  }, [t]);
 
   const handleCategoryChange = useCallback(
     (id: string, category: ColorCategory) => {
@@ -218,7 +220,7 @@ export default function HomeClient() {
         <UploadZone onFiles={handleFiles} />
         {processing && (
           <div className="mt-3 text-center text-sm text-gray-500">
-            Processing images...
+            {t("home.processing")}
           </div>
         )}
       </div>
@@ -228,20 +230,22 @@ export default function HomeClient() {
           {/* Action bar */}
           <div className="flex items-center justify-between mb-6">
             <div className="text-xs text-gray-400">
-              {totalCount} image{totalCount !== 1 ? "s" : ""}
+              {totalCount === 1
+                ? t("home.imageCount", { count: 1 })
+                : t("home.imageCountPlural", { count: totalCount })}
             </div>
             <div className="flex items-center gap-2">
               <button
                 onClick={handleExport}
                 className="text-xs px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
               >
-                Export JSON
+                {t("home.exportJson")}
               </button>
               <button
                 onClick={handleClearAll}
                 className="text-xs px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-red-500 hover:bg-red-50 transition-colors"
               >
-                Clear All
+                {t("home.clearAll")}
               </button>
             </div>
           </div>
@@ -257,7 +261,7 @@ export default function HomeClient() {
                     : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
                 }`}
               >
-                All ({totalCount})
+                {t("home.filterAll")} ({totalCount})
               </button>
               {CATEGORY_ORDER.map((cat) => {
                 const count = groupedImages.get(cat)?.length ?? 0;
@@ -319,7 +323,7 @@ export default function HomeClient() {
 
       {totalCount === 0 && !processing && (
         <div className="text-center py-16 text-gray-400 text-sm">
-          Upload some images to get started
+          {t("home.getStarted")}
         </div>
       )}
     </section>

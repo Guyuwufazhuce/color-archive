@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase/client";
+import { useLanguage } from "@/lib/LanguageContext";
 
 interface Photo {
   id: string;
@@ -13,6 +14,7 @@ interface Photo {
 
 export default function LatestUploads() {
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const { t } = useLanguage();
 
   useEffect(() => {
     async function load() {
@@ -33,13 +35,13 @@ export default function LatestUploads() {
     <section className="max-w-6xl mx-auto px-4 pb-8">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-base font-semibold text-gray-900">
-          Latest Uploads
+          {t("latestUploads.title")}
         </h2>
         <Link
           href="/gallery"
           className="text-xs text-gray-500 hover:text-gray-800 transition-colors"
         >
-          View all →
+          {t("latestUploads.viewAll")}
         </Link>
       </div>
 
