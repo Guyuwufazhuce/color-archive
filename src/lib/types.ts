@@ -26,9 +26,22 @@ export interface ImageData {
   id: string;
   name: string;
   dataUrl: string;
+  originalFile?: File;
   dominantColors: DominantColor[];
   category: ColorCategory;
   manualCategory: ColorCategory | null;
+  published?: boolean;
+}
+
+export interface PhotoRecord {
+  id: string;
+  image_url: string;
+  thumbnail_url: string | null;
+  dominant_hex: string;
+  color_family: ColorCategory;
+  width: number;
+  height: number;
+  created_at: string;
 }
 
 export const CATEGORY_LABELS: Record<ColorCategory, string> = {

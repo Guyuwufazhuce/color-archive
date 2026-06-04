@@ -1,20 +1,25 @@
 "use client";
 
-import type { ColorCategory, DominantColor, ImageData } from "@/lib/types";
+import type { ColorCategory, ImageData } from "@/lib/types";
 import { CATEGORY_LABELS, CATEGORY_ORDER } from "@/lib/types";
 
 interface ImageCardProps {
   image: ImageData;
   onDelete: (id: string) => void;
   onCategoryChange: (id: string, category: ColorCategory) => void;
+  onPublish?: (id: string) => void;
+  publishing?: boolean;
 }
 
 export default function ImageCard({
   image,
   onDelete,
   onCategoryChange,
+  onPublish,
+  publishing,
 }: ImageCardProps) {
   const primaryColor = image.dominantColors[0];
+  const category = image.manualCategory ?? image.category;
 
   return (
     <div className="bg-white rounded-xl overflow-hidden shadow-sm border border-gray-100 break-inside-avoid mb-4">
@@ -32,6 +37,13 @@ export default function ImageCard({
         >
           ✕
         </button>
+
+        {/* Published badge */}
+        {image.published && (
+          <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-green-500/80 text-white text-[10px] font-medium">
+            Published
+          </div>
+        )}
       </div>
 
       {/* Info section */}
@@ -57,13 +69,13 @@ export default function ImageCard({
             />
           )}
           <span className="text-xs font-medium text-gray-500">
-            {CATEGORY_LABELS[image.category]}
+            {CATEGORY_LABELS[category]}
           </span>
         </div>
 
         {/* Category selector */}
         <select
-          value={image.manualCategory ?? image.category}
+          value={category}
           onChange={(e) =>
             onCategoryChange(image.id, e.target.value as ColorCategory)
           }
@@ -75,6 +87,17 @@ export default function ImageCard({
             </option>
           ))}
         </select>
+
+        {/* Publish button */}
+        {onPublish && !image.published && (
+          <button
+            onClick={() => onPublish(image.id)}
+            disabled={publishing}
+            className="w-full text-xs px-3 py-1.5 rounded-lg bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          >
+            {publishing ? "Publishing..." : "Publish to Gallery"}
+          </button>
+        )}
       </div>
     </div>
   );

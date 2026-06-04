@@ -1,5 +1,7 @@
 import { Metadata } from "next";
 import HomeClient from "./HomeClient";
+import CommunityStats from "@/components/gallery/CommunityStats";
+import LatestUploads from "@/components/gallery/LatestUploads";
 import AdsPlaceholder from "@/components/AdsPlaceholder";
 import { siteConfig } from "@/data/siteConfig";
 import { colorPages } from "@/data/colorData";
@@ -27,8 +29,8 @@ export default function HomePage() {
           </h1>
           <p className="mt-3 text-sm text-gray-500 leading-relaxed">
             Drop any image and Color Archive automatically extracts its dominant
-            colors and sorts it into the right color family. All processing
-            happens in your browser — nothing is uploaded to a server.
+            colors and sorts it into the right color family. Share it with the
+            community gallery. All processing happens in your browser.
           </p>
         </div>
       </section>
@@ -36,10 +38,17 @@ export default function HomePage() {
       {/* Tool section */}
       <HomeClient />
 
+      {/* Community Stats */}
+      <CommunityStats />
+
+      {/* Latest Uploads */}
+      <LatestUploads />
+
+      {/* Ad placeholder */}
+      <AdsPlaceholder format="leaderboard" className="max-w-6xl mx-auto px-4 mb-12" />
+
       {/* SEO content section */}
       <section className="max-w-6xl mx-auto px-4 pt-16 pb-8">
-        <AdsPlaceholder format="leaderboard" className="mb-12 max-w-2xl mx-auto" />
-
         <div className="max-w-3xl">
           <h2 className="text-xl font-semibold text-gray-900 mb-4">
             Browse images by color
@@ -87,11 +96,11 @@ export default function HomePage() {
           </div>
           <div>
             <h3 className="text-sm font-semibold text-gray-900 mb-2">
-              Export & persist
+              Community gallery
             </h3>
             <p className="text-xs text-gray-500 leading-relaxed">
-              Your categorized collection is saved automatically. Export
-              classification data as JSON for use in other tools and workflows.
+              Published images appear in the public gallery, browsable by color
+              family. Explore the community library or contribute your own.
             </p>
           </div>
         </div>

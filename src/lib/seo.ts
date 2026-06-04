@@ -1,61 +1,71 @@
-import { Metadata } from "next";
+import type { ColorPageData } from "@/data/colorData";
+import type { GuideData } from "@/data/guideData";
+import type { Metadata } from "next";
 import { siteConfig } from "@/data/siteConfig";
-import { ColorPageData } from "@/data/colorData";
-import { GuideData } from "@/data/guideData";
 
-export function buildMetadata(overrides: {
-  title: string;
-  description: string;
-  path: string;
-  keywords?: string[];
-  ogImage?: string;
-}): Metadata {
-  const url = `${siteConfig.url}${overrides.path}`;
+export function buildColorMetadata(color: ColorPageData): Metadata {
   return {
-    title: overrides.title,
-    description: overrides.description,
-    keywords: overrides.keywords?.join(", "),
-    alternates: { canonical: url },
+    title: color.seo.title,
+    description: color.seo.description,
+    keywords: color.seo.keywords,
+    alternates: { canonical: `${siteConfig.url}/colors/${color.slug}` },
     openGraph: {
-      title: overrides.title,
-      description: overrides.description,
-      url,
-      siteName: siteConfig.name,
-      type: "website",
-      images: overrides.ogImage
-        ? [{ url: overrides.ogImage, width: 1200, height: 630 }]
-        : undefined,
-    },
-    twitter: {
-      card: "summary_large_image",
-      title: overrides.title,
-      description: overrides.description,
+      title: color.seo.title,
+      description: color.seo.description,
+      url: `${siteConfig.url}/colors/${color.slug}`,
     },
   };
 }
 
-export function buildColorMetadata(color: ColorPageData): Metadata {
-  return buildMetadata({
-    title: color.seo.title,
-    description: color.seo.description,
-    path: `/colors/${color.slug}`,
-    keywords: color.seo.keywords,
-  });
-}
-
 export function buildGuideMetadata(guide: GuideData): Metadata {
-  return buildMetadata({
+  return {
     title: guide.seo.title,
     description: guide.seo.description,
-    path: `/guide/${guide.slug}`,
     keywords: guide.seo.keywords,
-  });
+    alternates: {
+      canonical: `${siteConfig.url}/guide/${guide.slug}`,
+    },
+    openGraph: {
+      title: guide.seo.title,
+      description: guide.seo.description,
+      url: `${siteConfig.url}/guide/${guide.slug}`,
+    },
+  };
 }
 
-export function buildPageMetadata(
-  title: string,
-  description: string,
-  path: string
+export function buildCollectionMetadata(
+  label: string,
+  slug: string
 ): Metadata {
-  return buildMetadata({ title, description, path });
+  const title = `${label} Color Archive — Browse Community Photos`;
+  const description = `Browse ${label.toLowerCase()} photos submitted by the community. Discover images organized by ${label.toLowerCase()} — the ${label.toLowerCase()} color collection.`;
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: `${siteConfig.url}/collection/${slug}`,
+    },
+    openGraph: { title, description, url: `${siteConfig.url}/collection/${slug}` },
+  };
+}
+
+export function buildPhotoMetadata(
+  id: string,
+  hex: string,
+  family: string
+): Metadata {
+  const title = `Photo #${id.slice(0, 8)} — ${hex} | Color Archive`;
+  const description = `View this photo with dominant color ${hex} (${family}) uploaded to Color Archive.`;
+  return {
+    title,
+    description,
+    alternates: {
+      canonical: `${siteConfig.url}/photo/${id}`,
+    },
+    openGraph: {
+      title,
+      description,
+      url: `${siteConfig.url}/photo/${id}`,
+    },
+  };
 }

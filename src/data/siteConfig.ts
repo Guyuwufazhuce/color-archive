@@ -10,6 +10,7 @@ export const siteConfig = {
 
   nav: [
     { label: "Home", href: "/" },
+    { label: "Gallery", href: "/gallery" },
     { label: "Colors", href: "/colors" },
     { label: "Guides", href: "/guide" },
     { label: "About", href: "/about" },

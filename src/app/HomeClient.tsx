@@ -32,6 +32,7 @@ export default function HomeClient() {
     "all"
   );
   const [processing, setProcessing] = useState(false);
+  const [publishingIds, setPublishingIds] = useState<Set<string>>(new Set());
 
   // Load from localStorage on mount
   useEffect(() => {
@@ -60,9 +61,11 @@ export default function HomeClient() {
             id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
             name: file.name,
             dataUrl,
+            originalFile: file,
             dominantColors,
             category,
             manualCategory: null,
+            published: false,
           });
         } catch (err) {
           reject(err);
@@ -118,6 +121,47 @@ export default function HomeClient() {
     },
     []
   );
+
+  const handlePublish = useCallback(async (id: string) => {
+    const img = images.find((i) => i.id === id);
+    if (!img || !img.originalFile) return;
+
+    setPublishingIds((prev) => new Set(prev).add(id));
+
+    try {
+      const category = img.manualCategory ?? img.category;
+      const hex = img.dominantColors[0]?.hex || "#000000";
+
+      const formData = new FormData();
+      formData.append("file", img.originalFile);
+      formData.append("dominantHex", hex);
+      formData.append("colorFamily", category);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (res.ok) {
+        setImages((prev) =>
+          prev.map((i) =>
+            i.id === id ? { ...i, published: true } : i
+          )
+        );
+      } else {
+        const errData = await res.json();
+        console.error("Publish error:", errData.error);
+      }
+    } catch (err) {
+      console.error("Publish error:", err);
+    } finally {
+      setPublishingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+  }, [images]);
 
   const groupedImages = useMemo(() => {
     const groups = new Map<ColorCategory, ImageData[]>();
@@ -262,6 +306,8 @@ export default function HomeClient() {
                       image={img}
                       onDelete={handleDelete}
                       onCategoryChange={handleCategoryChange}
+                      onPublish={handlePublish}
+                      publishing={publishingIds.has(img.id)}
                     />
                   ))}
                 </div>
