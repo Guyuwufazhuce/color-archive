@@ -6,6 +6,7 @@ import type { ImageData } from "@/lib/types";
 import { STORAGE_KEY } from "@/lib/types";
 import { extractDominantColor, extractPalette } from "@/lib/colorAnalysis";
 import { classifyHex } from "@/lib/colorAnalysis";
+import PendulumBounce from "@/components/PendulumBounce";
 
 type Status = "Processing" | "Done ✅" | "Error ❌" | null;
 
@@ -197,6 +198,11 @@ export default function HomeClient() {
           e.target.value = "";
         }}
       />
+
+      {/* Pendulum bounce animation */}
+      <div className="mt-8">
+        <PendulumBounce />
+      </div>
 
       {/* Recent color swatches preview */}
       {recentImages.length > 0 && (
