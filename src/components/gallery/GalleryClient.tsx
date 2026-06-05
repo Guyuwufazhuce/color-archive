@@ -218,15 +218,9 @@ export default function GalleryClient() {
 
       {noMatch && (
         <div className="text-center py-24">
-          <p className="text-gray-300 text-sm mb-4">
+          <p className="text-gray-300 text-sm">
             No images match this color
           </p>
-          <button
-            onClick={() => setActiveFilter(null)}
-            className="inline-block px-5 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-colors"
-          >
-            Browse all colors
-          </button>
         </div>
       )}
 
