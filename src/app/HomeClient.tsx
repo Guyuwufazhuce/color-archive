@@ -6,7 +6,7 @@ import type { ImageData } from "@/lib/types";
 import { STORAGE_KEY } from "@/lib/types";
 import { extractDominantColor, extractPalette } from "@/lib/colorAnalysis";
 import { classifyHex } from "@/lib/colorAnalysis";
-import ColorBlock from "@/components/PendulumBounce";
+import RainbowBridge from "@/components/PendulumBounce";
 
 type Status = "Processing" | "Done ✅" | "Error ❌" | null;
 
@@ -186,9 +186,9 @@ export default function HomeClient() {
         }}
       />
 
-      {/* Rainbow color block animation */}
+      {/* Rainbow bridge animation */}
       <div className="mt-12">
-        <ColorBlock />
+        <RainbowBridge />
       </div>
     </div>
   );
