@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import type { ImageData } from "@/lib/types";
 import { STORAGE_KEY } from "@/lib/types";
@@ -29,7 +29,7 @@ const CATEGORIES = [
 
 type ColorFilter = string | null;
 
-const SHOW_COUNT = 12;
+const PAGE_SIZE = 12;
 
 function loadImages(): ImageData[] {
   try {
@@ -42,6 +42,10 @@ function loadImages(): ImageData[] {
   }
 }
 
+function saveImages(images: ImageData[]): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(images));
+}
+
 function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString("en-US", {
     month: "short",
@@ -52,24 +56,58 @@ function formatDate(ts: number): string {
 export default function GalleryClient() {
   const [images, setImages] = useState<ImageData[]>([]);
   const [activeFilter, setActiveFilter] = useState<ColorFilter>(null);
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
     setImages(loadImages());
   }, []);
 
-  // Show all if filtering, otherwise Latest 12
-  const displayImages = useMemo(() => {
+  // Reset visible count when filter changes
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [activeFilter]);
+
+  // All images matching current filter
+  const filteredImages = useMemo(() => {
     if (activeFilter) {
       return images.filter((img) => img.category === activeFilter);
     }
-    return images.slice(0, SHOW_COUNT);
+    return images;
   }, [images, activeFilter]);
 
-  useEffect(() => {
-    console.log(
-      `[gallery] Filter: ${activeFilter ?? "Latest"} → ${displayImages.length} images`
-    );
-  }, [activeFilter, displayImages.length]);
+  // Slice for display
+  const displayImages = useMemo(() => {
+    return filteredImages.slice(0, visibleCount);
+  }, [filteredImages, visibleCount]);
+
+  const hasMore = visibleCount < filteredImages.length;
+
+  const handleDelete = useCallback(
+    (e: React.MouseEvent, id: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (!window.confirm("Delete this image?")) return;
+
+      setDeleteError(null);
+
+      try {
+        const updated = images.filter((img) => img.id !== id);
+        saveImages(updated);
+        setImages(updated);
+      } catch (err) {
+        setDeleteError(
+          err instanceof Error ? err.message : "Failed to delete image"
+        );
+      }
+    },
+    [images]
+  );
+
+  const handleLoadMore = useCallback(() => {
+    setVisibleCount((prev) => prev + PAGE_SIZE);
+  }, []);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -86,6 +124,13 @@ export default function GalleryClient() {
         </Link>
       </div>
 
+      {/* Delete error toast */}
+      {deleteError && (
+        <div className="mb-4 px-4 py-2 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600">
+          {deleteError}
+        </div>
+      )}
+
       {/* Color Filter Bar */}
       {images.length > 0 && (
         <div className="mb-10">
@@ -93,7 +138,6 @@ export default function GalleryClient() {
             {/* Grid icon for All/Latest */}
             <button
               onClick={() => {
-                console.log("[gallery] Filter: All");
                 setActiveFilter(null);
               }}
               className={`p-1 rounded-md transition-colors ${
@@ -127,7 +171,6 @@ export default function GalleryClient() {
                 <button
                   key={cat.name}
                   onClick={() => {
-                    console.log(`[gallery] Filter: ${cat.name}`);
                     setActiveFilter(isActive ? null : cat.name);
                   }}
                   className="relative group"
@@ -165,42 +208,78 @@ export default function GalleryClient() {
           </Link>
         </div>
       ) : (
-        <div className="masonry-grid" style={{ columnCount: 2, columnGap: 32 }}>
-          {displayImages.map((img) => (
-            <Link
-              key={img.id}
-              href={`/photo/${img.id}`}
-              className="block group mb-8 sm:mb-8"
-              style={{ breakInside: "avoid" }}
-            >
-              <div className="relative rounded-2xl overflow-hidden bg-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                <img
-                  src={img.src}
-                  alt={img.name}
-                  className="w-full h-auto object-cover group-hover:opacity-90 transition-opacity"
-                />
-                {/* Hover overlay */}
-                <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className="w-3 h-3 rounded-full border border-white/40"
-                      style={{ backgroundColor: img.dominantColor }}
-                    />
-                    <span className="text-xs text-white font-medium">
-                      {img.dominantColor}
-                    </span>
-                    <span className="text-[10px] text-white/70 ml-auto">
-                      {img.category}
-                    </span>
-                  </div>
-                  <div className="text-[10px] text-white/50 mt-1">
-                    {formatDate(img.createdAt)}
+        <>
+          <div className="masonry-grid" style={{ columnCount: 2, columnGap: 32 }}>
+            {displayImages.map((img) => (
+              <Link
+                key={img.id}
+                href={`/photo/${img.id}`}
+                className="block group mb-8 sm:mb-8"
+                style={{ breakInside: "avoid" }}
+              >
+                <div className="relative rounded-2xl overflow-hidden bg-gray-100 shadow-sm hover:shadow-md transition-shadow">
+                  <img
+                    src={img.src}
+                    alt={img.name}
+                    className="w-full h-auto object-cover group-hover:opacity-90 transition-opacity"
+                  />
+
+                  {/* Delete button — top-right, visible on hover */}
+                  <button
+                    onClick={(e) => handleDelete(e, img.id)}
+                    className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-white/80 backdrop-blur-sm text-gray-400 hover:text-red-500 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                    title="Delete"
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </button>
+
+                  {/* Hover overlay */}
+                  <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="w-3 h-3 rounded-full border border-white/40"
+                        style={{ backgroundColor: img.dominantColor }}
+                      />
+                      <span className="text-xs text-white font-medium">
+                        {img.dominantColor}
+                      </span>
+                      <span className="text-[10px] text-white/70 ml-auto">
+                        {img.category}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-white/50 mt-1">
+                      {formatDate(img.createdAt)}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+              </Link>
+            ))}
+          </div>
+
+          {/* Load More */}
+          {hasMore && (
+            <div className="text-center mt-8">
+              <button
+                onClick={handleLoadMore}
+                className="px-6 py-2.5 bg-gray-100 text-gray-600 text-sm font-medium rounded-full hover:bg-gray-200 transition-colors"
+              >
+                Load more
+              </button>
+            </div>
+          )}
+        </>
       )}
 
       {/* Responsive columns */}
