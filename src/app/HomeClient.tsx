@@ -3,9 +3,8 @@
 import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ImageData } from "@/lib/types";
-import { STORAGE_KEY } from "@/lib/types";
-import { extractDominantColor, extractPalette } from "@/lib/colorAnalysis";
-import { classifyHex } from "@/lib/colorAnalysis";
+import { loadImages, saveImages } from "@/lib/types";
+import { extractDominantColor, extractPalette, classifyPalette } from "@/lib/colorAnalysis";
 import RainbowBridge from "@/components/PendulumBounce";
 
 type Status = "Processing" | "Done ✅" | "Error ❌" | null;
@@ -70,31 +69,30 @@ export default function HomeClient() {
         });
 
         const compressedSrc = await compressImage(rawDataUrl, file);
-        const dominantColor = await extractDominantColor(compressedSrc);
+        const color_hex = await extractDominantColor(compressedSrc);
         const palette = await extractPalette(compressedSrc, 5);
-        const category = classifyHex(dominantColor);
+        const color_name = classifyPalette(palette, color_hex);
 
-        console.log(`[color] ${file.name}: color=${dominantColor} category=${category}`);
+        console.log(`[color] ${file.name}: hex=${color_hex} name=${color_name}`);
         console.log(`[color] ${file.name}: palette=[${palette.join(", ")}]`);
 
         return {
           id: crypto.randomUUID(),
           name: file.name,
-          src: compressedSrc,
-          dominantColor,
-          category,
+          image_url: compressedSrc,
+          storage_path: null,
+          color_hex,
+          color_name,
           palette,
-          createdAt: Date.now(),
+          created_at: Date.now(),
         } satisfies ImageData;
       });
 
       Promise.all(jobs)
         .then((newImages) => {
-          const existing: ImageData[] = JSON.parse(
-            localStorage.getItem(STORAGE_KEY) || "[]"
-          );
+          const existing = loadImages();
           const all = [...newImages, ...existing];
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+          saveImages(all);
 
           console.log(`[storage] Saved ${newImages.length} image(s), total ${all.length}`);
           setStatus("Done ✅");

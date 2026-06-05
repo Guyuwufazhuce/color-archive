@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import type { ImageData } from "@/lib/types";
-import { STORAGE_KEY } from "@/lib/types";
+import { loadImages, saveImages } from "@/lib/types";
 
 // ─── 18 Color Categories ────────────────────────────────────
 const CATEGORIES = [
@@ -31,21 +31,6 @@ type ColorFilter = string | null;
 
 const PAGE_SIZE = 12;
 
-function loadImages(): ImageData[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveImages(images: ImageData[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(images));
-}
-
 function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString("en-US", {
     month: "short",
@@ -71,7 +56,7 @@ export default function GalleryClient() {
   // All images matching current filter
   const filteredImages = useMemo(() => {
     if (activeFilter) {
-      return images.filter((img) => img.category === activeFilter);
+      return images.filter((img) => img.color_name === activeFilter);
     }
     return images;
   }, [images, activeFilter]);
@@ -135,7 +120,7 @@ export default function GalleryClient() {
       {images.length > 0 && (
         <div className="mb-10">
           <div className="flex flex-wrap gap-4 sm:gap-5 items-center">
-            {/* Grid icon for All/Latest */}
+            {/* Grid icon for Latest */}
             <button
               onClick={() => {
                 setActiveFilter(null);
@@ -218,11 +203,21 @@ export default function GalleryClient() {
                 style={{ breakInside: "avoid" }}
               >
                 <div className="relative rounded-2xl overflow-hidden bg-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                  <img
-                    src={img.src}
-                    alt={img.name}
-                    className="w-full h-auto object-cover group-hover:opacity-90 transition-opacity"
-                  />
+                  <div className="relative w-full" style={{ aspectRatio: 'auto' }}>
+                    <img
+                      src={img.image_url}
+                      alt={img.name}
+                      className="w-full h-auto object-cover group-hover:opacity-90 transition-opacity"
+                      onError={(e) => {
+                        const target = e.currentTarget;
+                        target.style.display = "none";
+                        target.nextElementSibling?.classList.remove("hidden");
+                      }}
+                    />
+                    <div className="hidden absolute inset-0 flex items-center justify-center bg-gray-100 text-gray-400 text-xs">
+                      Image not found
+                    </div>
+                  </div>
 
                   {/* Delete button — top-right, visible on hover */}
                   <button
@@ -250,17 +245,26 @@ export default function GalleryClient() {
                     <div className="flex items-center gap-2">
                       <span
                         className="w-3 h-3 rounded-full border border-white/40"
-                        style={{ backgroundColor: img.dominantColor }}
+                        style={{ backgroundColor: img.color_hex }}
                       />
                       <span className="text-xs text-white font-medium">
-                        {img.dominantColor}
+                        {img.color_hex}
                       </span>
                       <span className="text-[10px] text-white/70 ml-auto">
-                        {img.category}
+                        {img.color_name}
                       </span>
                     </div>
-                    <div className="text-[10px] text-white/50 mt-1">
-                      {formatDate(img.createdAt)}
+                    <div className="flex gap-1 mt-1">
+                      {img.palette.slice(0, 4).map((c, i) => (
+                        <span
+                          key={i}
+                          className="w-2 h-2 rounded-full border border-white/30"
+                          style={{ backgroundColor: c }}
+                        />
+                      ))}
+                    </div>
+                    <div className="text-[10px] text-white/50 mt-0.5">
+                      {formatDate(img.created_at)}
                     </div>
                   </div>
                 </div>

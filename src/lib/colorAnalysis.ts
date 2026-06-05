@@ -61,17 +61,12 @@ export async function extractDominantColor(dataUrl: string): Promise<string> {
     const g = pixels[i + 1];
     const b = pixels[i + 2];
     const a = pixels[i + 3];
-
     if (a < 128) continue;
     if (isBackground(r, g, b)) continue;
-
     const key = `${quantize(r)},${quantize(g)},${quantize(b)}`;
     const existing = buckets.get(key);
-    if (existing) {
-      existing.count++;
-    } else {
-      buckets.set(key, { r, g, b, count: 1 });
-    }
+    if (existing) existing.count++;
+    else buckets.set(key, { r, g, b, count: 1 });
   }
 
   if (buckets.size === 0) return "#999999";
@@ -113,17 +108,12 @@ export async function extractPalette(
     const g = pixels[i + 1];
     const b = pixels[i + 2];
     const a = pixels[i + 3];
-
     if (a < 128) continue;
     if (isBackground(r, g, b)) continue;
-
     const key = `${quantize(r)},${quantize(g)},${quantize(b)}`;
     const existing = buckets.get(key);
-    if (existing) {
-      existing.count++;
-    } else {
-      buckets.set(key, { r, g, b, count: 1 });
-    }
+    if (existing) existing.count++;
+    else buckets.set(key, { r, g, b, count: 1 });
   }
 
   if (buckets.size === 0) return ["#999999"];
@@ -191,26 +181,19 @@ function toHSL(r: number, g: number, b: number): { h: number; s: number; l: numb
 }
 
 /**
- * Classify a hex color into one of 18 categories:
- * Red, Orange, Amber, Yellow, Lime, Green, Mint, Cyan, Sky, Blue,
- * Indigo, Purple, Pink, Rose, Brown, Gray, Black, White
+ * Classify a single hex color into one of 18 categories.
  */
-export function classifyHex(hex: string): string {
+function classifyHex(hex: string): string {
   const { r, g, b } = hexToRgb(hex);
   const { h, s, l } = toHSL(r, g, b);
 
-  // Pure black / white
   if (l < 6) return "Black";
   if (l > 93 && s < 8) return "White";
-
-  // Grayscale
   if (s < 8) return "Gray";
 
-  // Brown: low lightness warm hues
   if (l < 35 && s < 55 && h >= 10 && h <= 70) return "Brown";
   if (l < 30 && s < 60 && h >= 0 && h < 10) return "Brown";
 
-  // Hue-based fine classification
   if (h >= 345 || h < 8) return "Red";
   if (h >= 8 && h < 25) return "Orange";
   if (h >= 25 && h < 43) return "Amber";
@@ -227,4 +210,39 @@ export function classifyHex(hex: string): string {
   if (h >= 330 && h < 345) return "Rose";
 
   return "Gray";
+}
+
+/**
+ * Classify an image by palette-weighted voting over all palette colors.
+ *
+ * Each palette color is classified individually, then the category
+ * that appears most frequently wins.  If the palette is empty, falls
+ * back to classifying `dominantHex`.
+ */
+export function classifyPalette(
+  palette: string[],
+  dominantHex: string
+): string {
+  if (palette.length === 0) return classifyHex(dominantHex);
+
+  const votes = new Map<string, number>();
+  for (const color of palette) {
+    const cat = classifyHex(color);
+    votes.set(cat, (votes.get(cat) || 0) + 1);
+  }
+
+  // Also include the dominant color with extra weight
+  const domCat = classifyHex(dominantHex);
+  votes.set(domCat, (votes.get(domCat) || 0) + 2);
+
+  let best = "Gray";
+  let bestCount = 0;
+  for (const [cat, count] of votes) {
+    if (count > bestCount || (count === bestCount && cat === domCat)) {
+      best = cat;
+      bestCount = count;
+    }
+  }
+
+  return best;
 }
