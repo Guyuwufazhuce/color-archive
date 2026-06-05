@@ -11,3 +11,35 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
     Arial, sans-serif;
 }
+
+/* ── Rainbow color block animation ─────────────────────── */
+.rainbow-block {
+  width: 48px;
+  height: 48px;
+  border-radius: 8px;
+  background: linear-gradient(
+    90deg,
+    #ff0000,
+    #ff7f00,
+    #ffff00,
+    #00ff00,
+    #00ffff,
+    #0000ff,
+    #8b00ff,
+    #ff0000
+  );
+  background-size: 300% 100%;
+  animation:
+    rainbowShift 3s linear infinite,
+    blockFloat 2s ease-in-out infinite alternate;
+}
+
+@keyframes rainbowShift {
+  0%   { background-position: 0% 0%; }
+  100% { background-position: 100% 0%; }
+}
+
+@keyframes blockFloat {
+  0%   { transform: translateX(-10px); }
+  100% { transform: translateX(10px); }
+}
