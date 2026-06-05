@@ -25,8 +25,13 @@ const FILTER_DOTS: { category: ColorCategory; color: string; hex: string }[] = [
 function loadImages(): ImageData[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : [];
-  } catch {
+    console.log("[Gallery] localStorage read:", raw ? `${raw.length} chars` : "empty/none");
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    console.log("[Gallery] parsed", parsed.length, "images");
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error("[Gallery] localStorage parse error:", e);
     return [];
   }
 }
