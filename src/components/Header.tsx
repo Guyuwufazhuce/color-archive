@@ -9,7 +9,6 @@ export default function Header() {
   const tabs = [
     { name: "Home", href: "/" },
     { name: "Gallery", href: "/gallery" },
-    { name: "About", href: "/about" },
   ];
 
   return (
