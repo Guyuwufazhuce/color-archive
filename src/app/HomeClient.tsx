@@ -96,25 +96,31 @@ export default function HomeClient() {
 
   return (
     <div className="min-h-[calc(100vh-6rem)] flex flex-col items-center justify-center px-4">
-      <div
-        className={`w-[320px] h-[320px] border-2 border-dashed rounded-2xl bg-white flex items-center justify-center cursor-pointer transition-colors ${
-          dragOver
-            ? "border-gray-400 bg-gray-50"
-            : "border-gray-200 hover:border-gray-300 hover:opacity-70"
-        }`}
-        onDragOver={(e) => {
-          e.preventDefault();
-          setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={handleDrop}
-        onClick={() => inputRef.current?.click()}
-      >
-        {processing ? (
-          <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
-        ) : (
-          <CloudUpload size={48} color="#111" />
-        )}
+      <div className="flex flex-col items-center relative group">
+        <div
+          className={`w-[320px] h-[320px] border-2 border-dashed rounded-2xl bg-white flex items-center justify-center cursor-pointer transition-all duration-200 ${
+            dragOver
+              ? "border-gray-400 bg-gray-50 scale-[1.02]"
+              : "border-gray-200 hover:border-gray-300"
+          }`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => inputRef.current?.click()}
+        >
+          {processing ? (
+            <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+          ) : (
+            <CloudUpload size={48} color="#111" className="group-hover:opacity-70 transition-opacity" />
+          )}
+        </div>
+        {/* Tooltip on hover */}
+        <div className="absolute -bottom-8 opacity-0 group-hover:opacity-100 transition-opacity duration-150 text-[11px] text-gray-400 whitespace-nowrap pointer-events-none">
+          Click or drag images here
+        </div>
       </div>
       <input
         ref={inputRef}

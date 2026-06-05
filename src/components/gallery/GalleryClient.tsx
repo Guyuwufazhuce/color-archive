@@ -4,22 +4,22 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import Link from "next/link";
 import { Search } from "lucide-react";
 import type { ImageData, ColorCategory } from "@/lib/types";
-import { CATEGORY_LABELS, CATEGORY_COLORS, CATEGORY_ORDER } from "@/lib/types";
+import { CATEGORY_LABELS } from "@/lib/types";
 import AdsPlaceholder from "@/components/AdsPlaceholder";
 
-const STORAGE_KEY = "color-…ages";
+const STORAGE_KEY = "color-archive-images";
 
-const FILTER_DOTS: { category: ColorCategory; color: string }[] = [
-  { category: "red", color: "#FF3B30" },
-  { category: "orange", color: "#FF9500" },
-  { category: "yellow", color: "#FFD60A" },
-  { category: "green", color: "#34C759" },
-  { category: "cyan", color: "#00C7BE" },
-  { category: "blue", color: "#007AFF" },
-  { category: "purple", color: "#5856D6" },
-  { category: "pink", color: "#FF2D55" },
-  { category: "brown", color: "#A2845E" },
-  { category: "grayscale", color: "#8E8E93" },
+const FILTER_DOTS: { category: ColorCategory; color: string; hex: string }[] = [
+  { category: "red", color: "#FF3B30", hex: "#FF3B30" },
+  { category: "orange", color: "#FF9500", hex: "#FF9500" },
+  { category: "yellow", color: "#FFD60A", hex: "#FFD60A" },
+  { category: "green", color: "#34C759", hex: "#34C759" },
+  { category: "cyan", color: "#00C7BE", hex: "#00C7BE" },
+  { category: "blue", color: "#007AFF", hex: "#007AFF" },
+  { category: "purple", color: "#5856D6", hex: "#5856D6" },
+  { category: "pink", color: "#FF2D55", hex: "#FF2D55" },
+  { category: "brown", color: "#A2845E", hex: "#A2845E" },
+  { category: "grayscale", color: "#8E8E93", hex: "#8E8E93" },
 ];
 
 function loadImages(): ImageData[] {
@@ -124,8 +124,8 @@ export default function GalleryClient() {
                   }}
                 />
                 {tooltip === d.category && (
-                  <div className="absolute -bottom-6 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-gray-400">
-                    {CATEGORY_LABELS[d.category]}
+                  <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-gray-400">
+                    {CATEGORY_LABELS[d.category]} &middot; {d.hex}
                   </div>
                 )}
               </div>
@@ -162,7 +162,7 @@ export default function GalleryClient() {
                       style={{ backgroundColor: hex }}
                     />
                     <span className="text-[11px] text-white font-medium">
-                      {name} &middot; {hex}
+                      {hex}
                     </span>
                   </div>
                 </div>

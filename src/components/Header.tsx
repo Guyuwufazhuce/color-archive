@@ -14,7 +14,7 @@ export default function Header() {
             WebkitTextFillColor: "transparent",
           }}
         >
-          Archive
+          Color Archive
         </Link>
       </div>
     </header>
