@@ -47,6 +47,8 @@ export default function GalleryClient() {
   const [activeFilter, setActiveFilter] = useState<ColorFilter>(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [reanalyzing, setReanalyzing] = useState(false);
+  const [reanalyzeMsg, setReanalyzeMsg] = useState<string | null>(null);
 
   useEffect(() => {
     setImages(loadImages());
@@ -99,6 +101,24 @@ export default function GalleryClient() {
     setVisibleCount((prev) => prev + PAGE_SIZE);
   }, []);
 
+  const handleReanalyze = useCallback(async () => {
+    setReanalyzing(true);
+    setReanalyzeMsg("Reanalyzing images…");
+    try {
+      const { reanalyzeAllImages } = await import("@/lib/colorAnalysis");
+      const count = await reanalyzeAllImages();
+      setReanalyzeMsg(`Done! ${count} images reanalyzed.`);
+      setImages(loadImages());
+    } catch (err) {
+      setReanalyzeMsg(
+        err instanceof Error ? err.message : "Reanalysis failed"
+      );
+    } finally {
+      setReanalyzing(false);
+      setTimeout(() => setReanalyzeMsg(null), 4000);
+    }
+  }, []);
+
   const isEmptyGallery = images.length === 0;
   const noColorSelected = activeFilter === null;
   const noMatch = activeFilter !== null && filteredImages.length === 0;
@@ -110,13 +130,29 @@ export default function GalleryClient() {
         <h1 className="text-lg font-semibold text-gray-900 tracking-tight">
           {pageTitle(activeFilter)}
         </h1>
-        <Link
-          href="/"
-          className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
-        >
-          Upload more
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleReanalyze}
+            disabled={reanalyzing}
+            className="text-[10px] text-gray-400 hover:text-gray-600 disabled:text-gray-300 transition-colors"
+          >
+            {reanalyzing ? "Analyzing…" : "Reanalyze"}
+          </button>
+          <Link
+            href="/"
+            className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            Upload more
+          </Link>
+        </div>
       </div>
+
+      {/* Reanalyze status toast */}
+      {reanalyzeMsg && (
+        <div className="mb-4 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-600">
+          {reanalyzeMsg}
+        </div>
+      )}
 
       {/* Delete error toast */}
       {deleteError && (
@@ -258,11 +294,11 @@ export default function GalleryClient() {
                       </span>
                     </div>
                     <div className="flex gap-1 mt-1">
-                      {img.palette.slice(0, 4).map((c, i) => (
+                      {(img.dominant_colors ?? []).slice(0, 4).map((c, i) => (
                         <span
                           key={i}
                           className="w-2 h-2 rounded-full border border-white/30"
-                          style={{ backgroundColor: c }}
+                          style={{ backgroundColor: c.hex }}
                         />
                       ))}
                     </div>

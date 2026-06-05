@@ -82,8 +82,8 @@ export default function HomeClient() {
           storage_path: null,
           color_hex: analysis.dominant_hex,
           color_name: analysis.dominant_name,
-          palette: analysis.clusters.map((c) => c.hex),
-          dominant_colors: analysis.clusters,
+          palette: analysis.merged_clusters.map((c) => c.hex),
+          dominant_colors: analysis.merged_clusters,
           color_tags: analysis.color_tags,
           created_at: Date.now(),
         } satisfies ImageData;

@@ -1,4 +1,4 @@
-// ─── Color Analysis — Multi-Cluster with Per-Category Thresholds ────────
+// ─── Color Analysis — Cluster → Classify → Merge by Name ────────
 
 import type { ColorCluster, ImageData } from "./types";
 
@@ -30,16 +30,18 @@ function loadImagePixels(
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      const maxDim = 200; // slightly larger for better sampling
+      const maxDim = 200;
       const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
       const w = Math.round(img.width * scale);
       const h = Math.round(img.height * scale);
+      // Minimum dimension check: if too small, just use original
+      if (w < 2 || h < 2) return resolve([]);
+
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext("2d");
       if (!ctx) return reject(new Error("Canvas unavailable"));
-      // Disable image smoothing to get "pixelated" sampling
       ctx.imageSmoothingEnabled = false;
       ctx.drawImage(img, 0, 0, w, h);
       const data = ctx.getImageData(0, 0, w, h).data;
@@ -66,7 +68,7 @@ function pickCentroids(
   pixels: { r: number; g: number; b: number }[],
   k: number
 ): Centroid[] {
-  // K++ initialization: pick first random, then weight by distance
+  if (pixels.length === 0) return [];
   const out: Centroid[] = [];
   const first = pixels[Math.floor(Math.random() * pixels.length)];
   out.push({ r: first.r, g: first.g, b: first.b, count: 0 });
@@ -74,7 +76,6 @@ function pickCentroids(
   for (let c = 1; c < k; c++) {
     let bestD2 = 0;
     let bestIdx = 0;
-    // sample a few candidates and pick the farthest one
     const candidates = Math.min(10, pixels.length);
     for (let t = 0; t < candidates; t++) {
       const idx = Math.floor(Math.random() * pixels.length);
@@ -132,7 +133,7 @@ function kMeans(
   // Remove empty centroids
   centroids = centroids.filter((c) => c.count > 0);
 
-  // Merge close centroids (distance < 30 in RGB — stricter to preserve distinct colors)
+  // Merge close centroids (distance < 30 in RGB)
   const merged: Centroid[] = [];
   const threshold = 30;
   for (const c of centroids) {
@@ -152,7 +153,7 @@ function kMeans(
   }
 
   merged.sort((a, b) => b.count - a.count);
-  return merged.slice(0, 8); // keep up to 8 clusters
+  return merged.slice(0, 12); // keep up to 12 clusters
 }
 
 // ─── HSV computation ─────────────────────────────────────────
@@ -174,38 +175,41 @@ function toHSV(r: number, g: number, b: number): { h: number; s: number; v: numb
   return { h: ((h % 360) + 360) % 360, s, v };
 }
 
-// ─── Single hex → category (18 categories) ──────────────────
+// ─── Single hex → category name ────────────────────────────
+// Process: HSV → classify by hue with priority rules.
+// Pink (h 330-15, sat > 0.18, v > 0.45) checked before Red/Brown.
 
 export function classifyHex(hex: string): string {
   const { r, g, b } = parseHex(hex);
-  const { h, s: sHSV, v } = toHSV(r, g, b);
-  const sPct = sHSV * 100;
-  const vPct = v * 100;
+  const { h, s, v } = toHSV(r, g, b);
 
-  // ── Black: very low brightness ──
-  if (vPct <= 18) return "Black";
+  // ── Black: brightness < 0.18 ──
+  if (v < 0.18) return "Black";
 
   // ── White: high brightness, very low saturation ──
-  if (vPct > 88 && sPct < 10) return "White";
+  if (v > 0.88 && s < 0.20) return "White";
 
-  // ── Gray: low saturation, mid brightness ──
-  if (sPct < 18 && vPct > 18 && vPct <= 88) return "Gray";
+  // ── Gray: strict — sat < 0.12, brightness 0.25–0.8 ──
+  if (s < 0.12 && v >= 0.25 && v <= 0.80) return "Gray";
 
-  // ── Brown: orange/red/yellow hues with muted saturation and low-medium value ──
-  if (vPct < 55 && sPct < 50) {
-    if ((h >= 10 && h < 50)) return "Brown";
-    if (h >= 0 && h < 10 && sPct < 40) return "Brown";
-    if (h >= 330 && h < 360 && vPct < 35) return "Brown";
+  // ── Pink (hue 330–360 or 0–15, sat > 0.18, v > 0.45)
+  //     Must be checked BEFORE Red/Brown to catch pinkish hues
+  if ((h >= 330 || h < 15) && s > 0.18 && v > 0.45) return "Pink";
+
+  // ── Brown: warm hues with low saturation and low-medium value ──
+  if (v < 0.55 && s < 0.50) {
+    if (h >= 10 && h < 50) return "Brown";
+    if (h >= 0 && h < 10 && s < 0.40) return "Brown";
+    if (h >= 330 && h < 360 && v < 0.35) return "Brown";
   }
 
-  // ── Chromatic: use hue ──
-  if (h >= 345 || h < 8) return "Red";
+  // ── Chromatic: classify by hue ──
+  if (h >= 345 || (h >= 0 && h < 8)) return "Red";
   if (h >= 8 && h < 25) return "Orange";
   if (h >= 25 && h < 43) return "Amber";
-  if (h >= 43 && h < 65) return "Yellow";
-  if (h >= 65 && h < 85) return "Lime";
-  if (h >= 85 && h < 140) return "Green";
-  if (h >= 140 && h < 165) return "Mint";
+  if (h >= 43 && h < 70) return "Yellow";
+  if (h >= 70 && h < 85) return "Lime";
+  if (h >= 85 && h < 165) return "Green";
   if (h >= 165 && h < 190) return "Cyan";
   if (h >= 190 && h < 215) return "Sky";
   if (h >= 215 && h < 240) return "Blue";
@@ -215,59 +219,64 @@ export function classifyHex(hex: string): string {
   if (h >= 330 && h < 345) return "Rose";
 
   // fallback
-  if (vPct <= 25) return "Black";
+  if (v <= 0.25) return "Black";
   return "Gray";
 }
 
-// ─── Per-category tag thresholds ────────────────────────────
-// A cluster is only added as a color_tag if it meets its category's
-// minimum saturation AND minimum percentage requirements.
+// ─── Merge clusters by category name ────────────────────────
+// After each centroid is classified, merge clusters with the same
+// name by summing their percentages. Keep the hex of the largest
+// cluster in each group (first encountered since input is sorted).
 
-const CHROMATIC_CATEGORIES = new Set([
-  "Red","Orange","Amber","Yellow","Lime","Green","Mint","Cyan",
-  "Sky","Blue","Indigo","Purple","Pink","Rose","Brown",
-]);
-
-function shouldTag(name: string, s: number, v: number, pct: number): boolean {
-  if (pct <= 0) return false;
-
-  // Chromatic colors (hue-based, not Black/White/Gray): need sat > 0.25 and pct > 5%
-  if (CHROMATIC_CATEGORIES.has(name)) {
-    return s > 0.25 && pct > 0.05;
-  }
-
-  // Black: brightness < 0.18, pct > 10%
-  if (name === "Black") return v < 0.18 && pct > 0.10;
-
-  // White: brightness > 0.88, saturation < 0.2, pct > 8%
-  if (name === "White") return v > 0.88 && s < 0.20 && pct > 0.08;
-
-  // Gray: saturation < 0.18, brightness 0.25–0.8, pct > 15%
-  if (name === "Gray") return s < 0.18 && v >= 0.25 && v <= 0.80 && pct > 0.15;
-
-  return false;
-}
-
-// ─── Assign color tags from clusters ────────────────────────
-
-function assignColorTags(clusters: ColorCluster[]): string[] {
-  const tagSet = new Set<string>();
+export function mergeClustersByCategory(clusters: ColorCluster[]): ColorCluster[] {
+  const map = new Map<string, { hex: string; percentage: number }>();
 
   for (const cl of clusters) {
-    const { r, g, b } = parseHex(cl.hex);
-    const { h, s, v } = toHSV(r, g, b);
-
-    if (shouldTag(cl.name, s, v, cl.percentage)) {
-      tagSet.add(cl.name);
+    const existing = map.get(cl.name);
+    if (existing) {
+      existing.percentage += cl.percentage;
+    } else {
+      map.set(cl.name, { hex: cl.hex, percentage: cl.percentage });
     }
   }
 
-  // Fallback: if no cluster passed thresholds, tag the top cluster
-  if (tagSet.size === 0 && clusters.length > 0) {
-    tagSet.add(clusters[0].name);
+  return Array.from(map.entries())
+    .map(([name, data]) => ({ hex: data.hex, name, percentage: data.percentage }))
+    .sort((a, b) => b.percentage - a.percentage);
+}
+
+// ─── Color tag thresholds (applied AFTER merging) ──────────
+// Chromatic colors: percentage > 5% → tag
+// Black: percentage > 10% → tag
+// White: percentage > 8% → tag
+// Gray: percentage > 15% → tag
+
+const CHROMATIC_CATEGORIES = new Set([
+  "Red", "Orange", "Amber", "Yellow", "Lime", "Green", "Mint", "Cyan",
+  "Sky", "Blue", "Indigo", "Purple", "Pink", "Rose", "Brown",
+]);
+
+function assignColorTags(mergedClusters: ColorCluster[]): string[] {
+  const tags: string[] = [];
+
+  for (const cl of mergedClusters) {
+    if (CHROMATIC_CATEGORIES.has(cl.name)) {
+      if (cl.percentage > 0.05) tags.push(cl.name);
+    } else if (cl.name === "Black") {
+      if (cl.percentage > 0.10) tags.push("Black");
+    } else if (cl.name === "White") {
+      if (cl.percentage > 0.08) tags.push("White");
+    } else if (cl.name === "Gray") {
+      if (cl.percentage > 0.15) tags.push("Gray");
+    }
   }
 
-  return Array.from(tagSet);
+  // Fallback: if nothing was tagged, tag the largest cluster
+  if (tags.length === 0 && mergedClusters.length > 0) {
+    tags.push(mergedClusters[0].name);
+  }
+
+  return tags;
 }
 
 // ─── Full image analysis ────────────────────────────────────
@@ -275,12 +284,18 @@ function assignColorTags(clusters: ColorCluster[]): string[] {
 export interface ImageAnalysis {
   dominant_hex: string;
   dominant_name: string;
-  clusters: ColorCluster[];
+  clusters: ColorCluster[];       // Raw clusters (before merging), up to 12
+  merged_clusters: ColorCluster[]; // Merged by category name
   color_tags: string[];
 }
 
 /**
- * Analyze an image: K‑means clustering → percentage → per-category tag thresholds.
+ * Analyze an image:
+ * 1. Downsample → pixel array
+ * 2. K-means clustering (K=12, 10 iterations)
+ * 3. Classify each centroid by HSV → category name
+ * 4. Merge clusters with same name → sum percentages
+ * 5. Apply per-category threshold rules → color_tags
  */
 export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
   const pixels = await loadImagePixels(dataUrl);
@@ -292,34 +307,35 @@ export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
       dominant_hex: "#999999",
       dominant_name: "Gray",
       clusters: [],
+      merged_clusters: [],
       color_tags: [],
     };
   }
 
-  const clusters: ColorCluster[] = centroids.map((c) => {
+  // Step 1: classify each centroid
+  const rawClusters: ColorCluster[] = centroids.map((c) => {
     const hex = rgbToHex(Math.round(c.r), Math.round(c.g), Math.round(c.b));
-    const name = classifyHex(hex);
-    return { hex, name, percentage: c.count / total };
+    return { hex, name: classifyHex(hex), percentage: c.count / total };
   });
 
-  const dominant = clusters[0];
-  const color_tags = assignColorTags(clusters);
+  // Step 2: merge by category name
+  const mergedClusters = mergeClustersByCategory(rawClusters);
 
-  // Ensure the dominant cluster's category is always in tags
-  if (!color_tags.includes(dominant.name)) {
-    color_tags.unshift(dominant.name);
-  }
+  // Step 3: assign color tags from merged clusters
+  const color_tags = assignColorTags(mergedClusters);
 
   return {
-    dominant_hex: dominant.hex,
-    dominant_name: dominant.name,
-    clusters,
+    dominant_hex: mergedClusters[0]?.hex ?? "#999999",
+    dominant_name: mergedClusters[0]?.name ?? "Gray",
+    clusters: rawClusters,
+    merged_clusters: mergedClusters,
     color_tags,
   };
 }
 
 /**
  * Re‑analyse every image currently in localStorage and persist updates.
+ * Stores merged_clusters as dominant_colors for clean display.
  */
 export async function reanalyzeAllImages(): Promise<number> {
   const { loadImages, saveImages } = await import("./types");
@@ -332,9 +348,10 @@ export async function reanalyzeAllImages(): Promise<number> {
       const result = await analyzeImage(img.image_url);
       img.color_hex = result.dominant_hex;
       img.color_name = result.dominant_name;
-      (img as any).dominant_colors = result.clusters;
+      // Store merged clusters (no duplicate names)
+      (img as any).dominant_colors = result.merged_clusters;
       (img as any).color_tags = result.color_tags;
-      img.palette = result.clusters.map((c) => c.hex);
+      img.palette = result.merged_clusters.map((c) => c.hex);
       updated++;
     } catch (e) {
       console.warn(`[reanalyze] skip ${img.id}:`, e);
@@ -356,7 +373,7 @@ export async function extractPalette(
   dataUrl: string
 ): Promise<string[]> {
   const r = await analyzeImage(dataUrl);
-  return r.clusters.map((c) => c.hex);
+  return r.merged_clusters.map((c) => c.hex);
 }
 
 export function classifyPalette(_palette: string[], _dominantHex: string): string {
