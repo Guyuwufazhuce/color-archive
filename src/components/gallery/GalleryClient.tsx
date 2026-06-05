@@ -128,16 +128,20 @@ export default function GalleryClient() {
       {/* Color Filter Bar — always visible once there are images */}
       {images.length > 0 && (
         <div className="mb-10">
-          <div className="flex flex-wrap gap-4 sm:gap-5 items-center">
+          <div className="flex flex-wrap gap-x-4 gap-y-6 items-start">
             {CATEGORIES.map((cat) => {
               const isActive = activeFilter === cat.name;
+              const count = images.filter((img) => {
+                const tags = (img.color_tags ?? [img.color_name]).map((t) => String(t));
+                return tags.includes(cat.name);
+              }).length;
               return (
                 <button
                   key={cat.name}
                   onClick={() => {
                     setActiveFilter(isActive ? null : cat.name);
                   }}
-                  className="relative group"
+                  className="relative flex flex-col items-center gap-0.5"
                   title={`${cat.name} (${cat.hex})`}
                 >
                   <span
@@ -148,9 +152,8 @@ export default function GalleryClient() {
                     }`}
                     style={{ backgroundColor: cat.hex }}
                   />
-                  <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                    {cat.name}
-                  </span>
+                  <span className="text-[9px] text-gray-400 leading-none">{count}</span>
+                  <span className="text-[9px] text-gray-300 leading-none">{cat.name}</span>
                 </button>
               );
             })}
