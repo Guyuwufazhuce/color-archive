@@ -1,189 +1,216 @@
 "use client";
 
-import { useEffect, useState, useMemo, useRef } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Link from "next/link";
-import { Search } from "lucide-react";
-import type { ImageData, ColorCategory } from "@/lib/types";
-import { CATEGORY_LABELS } from "@/lib/types";
-import AdsPlaceholder from "@/components/AdsPlaceholder";
+import type { ImageData } from "@/lib/types";
+import { STORAGE_KEY } from "@/lib/types";
 
-const STORAGE_KEY = "color-archive-images";
+// ─── Color Category Config ──────────────────────────────────
+const CATEGORIES = [
+  { name: "Red", hex: "#FF3B30" },
+  { name: "Orange", hex: "#FF9500" },
+  { name: "Yellow", hex: "#FFD60A" },
+  { name: "Green", hex: "#34C759" },
+  { name: "Cyan", hex: "#00C7BE" },
+  { name: "Blue", hex: "#007AFF" },
+  { name: "Purple", hex: "#5856D6" },
+  { name: "Pink", hex: "#FF2D55" },
+  { name: "Brown", hex: "#8B572A" },
+  { name: "Gray", hex: "#8E8E93" },
+] as const;
 
-const FILTER_DOTS: { category: ColorCategory; color: string; hex: string }[] = [
-  { category: "red", color: "#FF3B30", hex: "#FF3B30" },
-  { category: "orange", color: "#FF9500", hex: "#FF9500" },
-  { category: "yellow", color: "#FFD60A", hex: "#FFD60A" },
-  { category: "green", color: "#34C759", hex: "#34C759" },
-  { category: "cyan", color: "#00C7BE", hex: "#00C7BE" },
-  { category: "blue", color: "#007AFF", hex: "#007AFF" },
-  { category: "purple", color: "#5856D6", hex: "#5856D6" },
-  { category: "pink", color: "#FF2D55", hex: "#FF2D55" },
-  { category: "brown", color: "#A2845E", hex: "#A2845E" },
-  { category: "grayscale", color: "#8E8E93", hex: "#8E8E93" },
-];
+type ColorFilter = string | null; // null = show all, otherwise category name
+
+// ─── Helpers ────────────────────────────────────────────────
 
 function loadImages(): ImageData[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    console.log("[Gallery] localStorage read:", raw ? `${raw.length} chars` : "empty/none");
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    console.log("[Gallery] parsed", parsed.length, "images");
     return Array.isArray(parsed) ? parsed : [];
-  } catch (e) {
-    console.error("[Gallery] localStorage parse error:", e);
+  } catch {
     return [];
   }
 }
 
 export default function GalleryClient() {
   const [images, setImages] = useState<ImageData[]>([]);
-  const [activeFilter, setActiveFilter] = useState<ColorCategory | null>(null);
-  const [search, setSearch] = useState("");
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [tooltip, setTooltip] = useState<ColorCategory | null>(null);
-  const searchRef = useRef<HTMLInputElement>(null);
+  const [activeFilter, setActiveFilter] = useState<ColorFilter>(null);
 
   useEffect(() => {
     setImages(loadImages());
-    const onFocus = () => setImages(loadImages());
-    window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
   }, []);
 
-  useEffect(() => {
-    if (searchOpen && searchRef.current) {
-      searchRef.current.focus();
-    }
-  }, [searchOpen]);
-
+  // Filter by selected color category
   const filtered = useMemo(() => {
-    let result = images;
-    if (activeFilter) {
-      result = result.filter((img) => img.category === activeFilter);
-    }
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      result = result.filter((img) => {
-        const hex = img.dominantColors[0]?.hex?.toLowerCase() || "";
-        const name =
-          CATEGORY_LABELS[img.category]?.toLowerCase() || "";
-        return hex.includes(q) || name.includes(q);
-      });
-    }
-    return result;
-  }, [images, activeFilter, search]);
+    if (!activeFilter) return images;
+    return images.filter((img) => img.category === activeFilter);
+  }, [images, activeFilter]);
 
+  // Log on filter change
+  useEffect(() => {
+    console.log(
+      `[gallery] Filter: ${activeFilter ?? "All"} → ${filtered.length} / ${images.length} images`
+    );
+  }, [activeFilter, filtered.length, images.length]);
+
+  // Log on masonry render
+  useEffect(() => {
+    if (filtered.length > 0) {
+      console.log(`[gallery] Rendering masonry with ${filtered.length} image(s)`);
+    }
+  }, [filtered.length]);
+
+  // ─── Render ──────────────────────────────────────────────
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
-      {/* Top bar: search + filter dots */}
-      <div className="flex items-center gap-4 mb-8">
-        {/* Search toggle */}
-        <div className="relative">
-          <button
-            onClick={() => setSearchOpen(!searchOpen)}
-            className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors"
-          >
-            <Search size={16} className="text-gray-400" />
-          </button>
-          {searchOpen && (
-            <div className="absolute left-0 top-10 z-10 animate-[searchOpen_200ms_ease]">
-              <input
-                ref={searchRef}
-                type="text"
-                placeholder="Search by HEX..."
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-48 px-3 py-1.5 text-xs border border-gray-200 rounded-full bg-white text-gray-900 placeholder:text-gray-300 focus:outline-none focus:border-gray-400 transition-colors"
-              />
-            </div>
-          )}
-        </div>
-
-        <style jsx>{`
-          @keyframes searchOpen {
-            from { opacity: 0; transform: translateY(-4px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-        `}</style>
-
-        {/* Color dots */}
-        <div className="flex items-center gap-4">
-          {FILTER_DOTS.map((d) => {
-            const active = activeFilter === d.category;
-            return (
-              <div key={d.category} className="relative">
-                <button
-                  onClick={() =>
-                    setActiveFilter(active ? null : d.category)
-                  }
-                  onMouseEnter={() => setTooltip(d.category)}
-                  onMouseLeave={() => setTooltip(null)}
-                  className="w-8 h-8 rounded-full transition-all duration-150"
-                  style={{
-                    backgroundColor: d.color,
-                    transform: active ? "scale(1.15)" : "scale(1)",
-                    boxShadow: active
-                      ? `0 0 0 2px white, 0 0 0 3px ${d.color}`
-                      : "none",
-                  }}
-                />
-                {tooltip === d.category && (
-                  <div className="absolute -bottom-7 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-gray-400">
-                    {CATEGORY_LABELS[d.category]} &middot; {d.hex}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-lg font-semibold text-gray-900 tracking-tight">
+          Gallery
+        </h1>
+        <Link
+          href="/"
+          className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
+        >
+          Upload more
+        </Link>
       </div>
 
-      {/* Ad — top of gallery */}
-      <AdsPlaceholder format="banner" className="mb-8" />
+      {/* Color Filter Bar */}
+      {images.length > 0 && (
+        <div className="mb-10">
+          <div className="flex flex-wrap gap-4 sm:gap-5 items-center">
+            {/* All icon (grid) */}
+            <button
+              onClick={() => {
+                console.log("[gallery] Filter: All");
+                setActiveFilter(null);
+              }}
+              className={`p-1 rounded-md transition-colors ${
+                activeFilter === null
+                  ? "text-gray-900 bg-gray-100"
+                  : "text-gray-300 hover:text-gray-500"
+              }`}
+              title="Show all"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <rect x="1" y="1" width="6" height="6" />
+                <rect x="9" y="1" width="6" height="6" />
+                <rect x="1" y="9" width="6" height="6" />
+                <rect x="9" y="9" width="6" height="6" />
+              </svg>
+            </button>
 
-      {/* Masonry grid — increased gap */}
-      <div className="columns-2 sm:columns-3 md:columns-4 gap-4 md:gap-8">
-        {filtered.map((img) => {
-          const hex = img.dominantColors[0]?.hex || "#ccc";
-          const name = CATEGORY_LABELS[img.category];
-          return (
+            {/* Color dots */}
+            {CATEGORIES.map((cat) => {
+              const isActive = activeFilter === cat.name;
+              return (
+                <button
+                  key={cat.name}
+                  onClick={() => {
+                    console.log(`[gallery] Filter: ${cat.name}`);
+                    setActiveFilter(isActive ? null : cat.name);
+                  }}
+                  className="relative group flex flex-col items-center gap-1"
+                  title={cat.hex}
+                >
+                  <span
+                    className={`block w-4 h-4 rounded-full transition-all duration-200 ${
+                      isActive
+                        ? "ring-2 ring-offset-2 ring-gray-900 scale-110"
+                        : "hover:scale-110"
+                    }`}
+                    style={{ backgroundColor: cat.hex }}
+                  />
+                  {/* Tooltip on hover */}
+                  <span className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[10px] text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                    {cat.hex}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Masonry / Empty state */}
+      {filtered.length === 0 ? (
+        <div className="text-center py-24">
+          <p className="text-gray-300 text-sm mb-4">
+            {images.length === 0 ? "Empty Gallery" : "No images match this color"}
+          </p>
+          <Link
+            href="/"
+            className="inline-block px-4 py-2 bg-gray-900 text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-colors"
+          >
+            {images.length === 0 ? "Upload your first image" : "Back to all"}
+          </Link>
+        </div>
+      ) : (
+        /* Masonry: CSS columns for natural flow */
+        <div className="masonry-grid" style={{ columnCount: 2, columnGap: 32 }}>
+          {filtered.map((img) => (
             <Link
               key={img.id}
               href={`/photo/${img.id}`}
-              className="block mb-4 md:mb-8 break-inside-avoid group"
+              className="block group mb-8 sm:mb-8"
+              style={{ breakInside: "avoid" }}
             >
               <div className="relative rounded-xl overflow-hidden bg-gray-100">
                 <img
-                  src={img.dataUrl}
+                  src={img.src}
                   alt={img.name}
-                  className="w-full h-auto object-cover group-hover:opacity-95 transition-opacity"
-                  loading="lazy"
+                  className="w-full h-auto object-cover group-hover:opacity-90 transition-opacity"
                 />
+                {/* Hover overlay: color dot + hex */}
                 <div className="absolute inset-x-0 bottom-0 p-3 bg-gradient-to-t from-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     <span
-                      className="w-3 h-3 rounded-full border border-white/40"
-                      style={{ backgroundColor: hex }}
+                      className="w-2.5 h-2.5 rounded-full border border-white/40"
+                      style={{ backgroundColor: img.dominantColor }}
                     />
-                    <span className="text-[11px] text-white font-medium">
-                      {hex}
+                    <span className="text-[10px] text-white font-medium">
+                      {img.dominantColor}
                     </span>
                   </div>
                 </div>
               </div>
             </Link>
-          );
-        })}
-      </div>
-
-      {filtered.length === 0 && (
-        <div className="text-center py-16 text-sm text-gray-300">
-          {images.length === 0
-            ? "Upload images to get started."
-            : "No images match this filter."}
+          ))}
         </div>
       )}
+
+      {/* Responsive: 3 columns on larger screens */}
+      <style jsx>{`
+        @media (min-width: 768px) {
+          .masonry-grid {
+            column-count: 3 !important;
+            column-gap: 32px;
+          }
+        }
+        @media (min-width: 1024px) {
+          .masonry-grid {
+            column-count: 4 !important;
+            column-gap: 32px;
+          }
+        }
+        @media (max-width: 767px) {
+          .masonry-grid {
+            column-gap: 24px;
+          }
+        }
+      `}</style>
     </div>
   );
 }

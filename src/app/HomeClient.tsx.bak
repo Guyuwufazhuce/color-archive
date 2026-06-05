@@ -1,0 +1,376 @@
+"use client";
+
+import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
+import { CloudUpload } from "lucide-react";
+import type { ImageData, ColorCategory } from "@/lib/types";
+
+// ─── Constants ───────────────────────────────────────────────
+
+const STORAGE_KEY = "color-archive-images";
+const MAX_DIMENSION = 1200;
+const JPEG_QUALITY = 0.8;
+
+// ─── Types ───────────────────────────────────────────────────
+
+type DebugStep =
+  | "idle"
+  | "file-selected"
+  | "reading"
+  | "compressing"
+  | "saving"
+  | "done"
+  | "error";
+
+// ─── Helpers ─────────────────────────────────────────────────
+
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+}
+
+function loadExisting(): ImageData[] {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Compress an image dataUrl:
+ * - Resize so longest side ≤ MAX_DIMENSION
+ * - Convert to JPEG at JPEG_QUALITY
+ * - Reject after 15s if Image onload never fires
+ */
+function compressImage(dataUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    let settled = false;
+
+    const timeout = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        // Detach event listeners to prevent late callbacks
+        img.onload = null;
+        img.onerror = null;
+        reject(new Error("compressImage: Image load timeout after 15s"));
+      }
+    }, 15000);
+
+    img.onload = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+
+      try {
+        let w = img.width;
+        let h = img.height;
+
+        if (w > MAX_DIMENSION || h > MAX_DIMENSION) {
+          const ratio = Math.min(MAX_DIMENSION / w, MAX_DIMENSION / h);
+          w = Math.round(w * ratio);
+          h = Math.round(h * ratio);
+        }
+
+        const canvas = document.createElement("canvas");
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext("2d");
+
+        if (!ctx) {
+          reject(new Error("compressImage: Canvas 2D context unavailable"));
+          return;
+        }
+
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL("image/jpeg", JPEG_QUALITY);
+        resolve(compressed);
+      } catch (e) {
+        reject(new Error("compressImage: " + String(e)));
+      }
+    };
+
+    img.onerror = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(new Error("compressImage: Image failed to load"));
+    };
+
+    img.src = dataUrl;
+  });
+}
+
+// ─── Component ───────────────────────────────────────────────
+
+export default function HomeClient() {
+  const router = useRouter();
+  const [debugStep, setDebugStep] = useState<DebugStep>("idle");
+  const [debugMsg, setDebugMsg] = useState("");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [fileCount, setFileCount] = useState(0);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  /** Process uploaded files: Read → Compress → Save → Navigate */
+  const processFiles = useCallback(
+    async (files: File[]) => {
+      setIsProcessing(true);
+      setErrorMsg(null);
+      setFileCount(files.length);
+      setDebugStep("file-selected");
+      setDebugMsg(`Selected: ${files.length} file(s)`);
+      console.log(`[Upload] processing ${files.length} file(s)`);
+
+      const imageFiles = Array.from(files).filter((f) =>
+        f.type.startsWith("image/")
+      );
+
+      if (imageFiles.length === 0) {
+        setErrorMsg("No image files found in selection");
+        setDebugStep("error");
+        setIsProcessing(false);
+        return;
+      }
+
+      const existing = loadExisting();
+      const newImages: ImageData[] = [];
+
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i];
+
+        // ── Step: Read via FileReader ──
+        setDebugStep("reading");
+        setDebugMsg(`Reading (${i + 1}/${imageFiles.length}): ${file.name}`);
+        console.log(`[Upload] reading ${file.name}`);
+
+        let rawDataUrl: string;
+        try {
+          rawDataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            const timeout = setTimeout(() => {
+              reader.abort();
+              reject(new Error("FileReader timeout after 30s"));
+            }, 30000);
+
+            reader.onload = () => {
+              clearTimeout(timeout);
+              resolve(reader.result as string);
+            };
+
+            reader.onerror = () => {
+              clearTimeout(timeout);
+              reject(
+                new Error("FileReader error: " + (reader.error?.message || "unknown"))
+              );
+            };
+
+            reader.readAsDataURL(file);
+          });
+        } catch (e) {
+          const msg = "FileReader failed: " + String(e);
+          console.error("[Upload]", msg);
+          setErrorMsg(msg);
+          setDebugStep("error");
+          setIsProcessing(false);
+          return;
+        }
+
+        // ── Step: Compress (resize + JPEG) ──
+        setDebugStep("compressing");
+        setDebugMsg(`Compressing (${i + 1}/${imageFiles.length}): ${file.name}`);
+        console.log(`[Upload] compressing ${file.name}`);
+
+        let compressed: string;
+        try {
+          compressed = await compressImage(rawDataUrl);
+          console.log(`[Upload] compressed OK, ${compressed.length} chars`);
+        } catch (e) {
+          // If compression fails, fall back to original dataUrl
+          console.warn(`[Upload] compression failed for ${file.name}, using raw:`, e);
+          compressed = rawDataUrl;
+        }
+
+        // Build ImageData object (color analysis skipped for reliability;
+        // can be re-added as a non-blocking background step)
+        newImages.push({
+          id: generateId(),
+          name: file.name,
+          dataUrl: compressed,
+          dominantColors: [],
+          category: "uncategorized" as ColorCategory,
+          manualCategory: null,
+        });
+      }
+
+      // ── Step: Save to localStorage ──
+      setDebugStep("saving");
+      setDebugMsg(`Saving ${newImages.length} image(s)...`);
+      console.log(`[Upload] saving ${newImages.length} images`);
+
+      try {
+        const allImages = [...newImages, ...existing];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(allImages));
+        console.log(`[Upload] saved ${allImages.length} total images`);
+      } catch (e) {
+        const msg = "localStorage write failed: " + String(e);
+        console.error("[Upload]", msg);
+        setErrorMsg(msg);
+        setDebugStep("error");
+        setIsProcessing(false);
+        return;
+      }
+
+      // ── Verify ──
+      const verify = localStorage.getItem(STORAGE_KEY);
+      if (!verify) {
+        const msg = "localStorage verify failed: read back empty";
+        console.error("[Upload]", msg);
+        setErrorMsg(msg);
+        setDebugStep("error");
+        setIsProcessing(false);
+        return;
+      }
+
+      // ── Done ──
+      setDebugStep("done");
+      setDebugMsg(`Saved ${newImages.length} image(s) ✓`);
+      setIsProcessing(false);
+      console.log("[Upload] done, navigating to /gallery");
+
+      // Small delay so user can see "Done" state before navigation
+      setTimeout(() => {
+        router.push("/gallery");
+      }, 500);
+    },
+    [router]
+  );
+
+  /** File input change handler */
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      // Reset so selecting the same file(s) again re-fires the event
+      e.target.value = "";
+
+      if (!files || files.length === 0) {
+        console.log("[Upload] user cancelled");
+        return;
+      }
+
+      console.log(`[Upload] ${files.length} file(s) selected`);
+      processFiles(Array.from(files));
+    },
+    [processFiles]
+  );
+
+  /** Drag-and-drop handler */
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length > 0) {
+        console.log(`[Upload] ${files.length} file(s) dropped`);
+        processFiles(files);
+      }
+    },
+    [processFiles]
+  );
+
+  // ─── Debug lines ─────────────────
+
+  const getDebugLines = (): DebugStep[] => {
+    const steps: DebugStep[] = ["idle", "file-selected", "reading", "compressing", "saving", "done"];
+    const lines: DebugStep[] = [];
+    for (const s of steps) {
+      lines.push(s);
+      if (s === debugStep) break;
+    }
+    return lines;
+  };
+
+  const stepLabel: Record<DebugStep, string> = {
+    idle: "Ready",
+    "file-selected": `Selected: ${fileCount}`,
+    reading: "Reading...",
+    compressing: "Compressing...",
+    saving: "Saving...",
+    done: "Done ✓",
+    error: "Error ❌",
+  };
+
+  // ─── Render ────────────────────
+
+  return (
+    <div className="min-h-[calc(100vh-6rem)] flex flex-col items-center justify-center px-4">
+      {/* Upload area */}
+      <div className="flex flex-col items-center">
+        <label
+          htmlFor="image-upload"
+          className={[
+            "w-[320px] h-[320px] border-2 border-dashed rounded-2xl bg-white",
+            "flex items-center justify-center cursor-pointer",
+            "transition-all duration-200 hover:border-gray-300",
+            isProcessing ? "border-gray-300" : "border-gray-200",
+            debugStep === "error" ? "border-red-300" : "",
+          ].join(" ")}
+          onDragOver={(e) => e.preventDefault()}
+          onDrop={handleDrop}
+        >
+          {isProcessing ? (
+            <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+          ) : (
+            <CloudUpload
+              size={48}
+              color={debugStep === "error" ? "#dc2626" : "#111"}
+            />
+          )}
+        </label>
+
+        <input
+          id="image-upload"
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={handleFileSelect}
+          className="absolute w-px h-px opacity-0 pointer-events-none"
+          tabIndex={-1}
+        />
+
+        <p className="mt-3 text-[11px] text-gray-400">
+          {debugStep === "error"
+            ? "Upload failed — click to retry"
+            : debugStep === "done"
+            ? "Upload complete, redirecting..."
+            : "Click to upload or drag images here"}
+        </p>
+      </div>
+
+      {/* Debug panel */}
+      <div className="mt-6 w-full max-w-md bg-gray-50 border border-gray-200 rounded-lg p-4 text-xs font-mono space-y-1">
+        <div className="font-bold text-gray-700 mb-1">🔧 DEBUG</div>
+
+        {getDebugLines().map((step, i) => (
+          <div
+            key={i}
+            className={
+              step === "error"
+                ? "text-red-600 font-bold"
+                : "text-green-700 font-bold"
+            }
+          >
+            → {stepLabel[step]}
+          </div>
+        ))}
+
+        {debugMsg && (
+          <div className="text-blue-700 mt-1">{debugMsg}</div>
+        )}
+
+        {errorMsg && (
+          <div className="text-red-600 mt-1">Error: {errorMsg}</div>
+        )}
+      </div>
+    </div>
+  );
+}
