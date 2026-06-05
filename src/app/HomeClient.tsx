@@ -1,12 +1,12 @@
 "use client";
 
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ImageData } from "@/lib/types";
 import { STORAGE_KEY } from "@/lib/types";
 import { extractDominantColor, extractPalette } from "@/lib/colorAnalysis";
 import { classifyHex } from "@/lib/colorAnalysis";
-import PendulumBounce from "@/components/PendulumBounce";
+import RainbowArch from "@/components/PendulumBounce";
 
 type Status = "Processing" | "Done ✅" | "Error ❌" | null;
 
@@ -48,18 +48,6 @@ export default function HomeClient() {
   const router = useRouter();
   const [status, setStatus] = useState<Status>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [recentImages, setRecentImages] = useState<ImageData[]>([]);
-
-  // Load recent 3 images for preview
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      const all: ImageData[] = raw ? JSON.parse(raw) : [];
-      setRecentImages(all.slice(0, 3));
-    } catch {
-      setRecentImages([]);
-    }
-  }, []);
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
@@ -107,7 +95,6 @@ export default function HomeClient() {
           );
           const all = [...newImages, ...existing];
           localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
-          setRecentImages(newImages.slice(0, 3));
 
           console.log(`[storage] Saved ${newImages.length} image(s), total ${all.length}`);
           setStatus("Done ✅");
@@ -199,24 +186,10 @@ export default function HomeClient() {
         }}
       />
 
-      {/* Pendulum bounce animation */}
-      <div className="mt-8">
-        <PendulumBounce />
+      {/* Rainbow arch animation */}
+      <div className="mt-10">
+        <RainbowArch />
       </div>
-
-      {/* Recent color swatches preview */}
-      {recentImages.length > 0 && (
-        <div className="mt-10 flex items-center gap-2">
-          {recentImages.map((img) => (
-            <div
-              key={img.id}
-              className="w-8 h-8 rounded-lg shadow-sm"
-              style={{ backgroundColor: img.dominantColor }}
-              title={img.dominantColor}
-            />
-          ))}
-        </div>
-      )}
     </div>
   );
 }
