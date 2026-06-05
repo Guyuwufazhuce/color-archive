@@ -1,41 +1,50 @@
 "use client";
 
 import Link from "next/link";
-import type { PhotoRecord } from "@/lib/types";
-import { CATEGORY_COLORS } from "@/lib/types";
+import type { ImageData, ColorCategory } from "@/lib/types";
+import { CATEGORY_LABELS, CATEGORY_COLORS } from "@/lib/types";
 import AdsPlaceholder from "@/components/AdsPlaceholder";
-import { useLanguage } from "@/lib/LanguageContext";
 
-export default function PhotoDetailClient({
-  photo,
-  related,
-}: {
-  photo: PhotoRecord;
-  related: PhotoRecord[];
-}) {
-  const { t } = useLanguage();
-  const family = photo.color_family;
-  const label = t(`colorFamilies.${family}`);
-  const hex = CATEGORY_COLORS[family] || "#000";
-  const createdDate = new Date(photo.created_at).toLocaleDateString("en-US", {
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+const STORAGE_KEY = "color-archive-images";
+
+function loadImage(id: string): ImageData | null {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    const images: ImageData[] = raw ? JSON.parse(raw) : [];
+    return images.find((img) => img.id === id) || null;
+  } catch {
+    return null;
+  }
+}
+
+export default function PhotoDetailClient({ id }: { id: string }) {
+  const photo = loadImage(id);
+
+  if (!photo) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-24 text-center">
+        <p className="text-gray-400 text-sm">Image not found.</p>
+        <Link
+          href="/gallery"
+          className="inline-block mt-4 text-xs text-gray-500 underline hover:text-gray-700 transition-colors"
+        >
+          Back to Gallery
+        </Link>
+      </div>
+    );
+  }
+
+  const hex = photo.dominantColors[0]?.hex || "#ccc";
+  const family = photo.category as ColorCategory;
+  const label = CATEGORY_LABELS[family] || "Uncategorized";
+  const swatchColor = CATEGORY_COLORS[family] || "#ccc";
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
       {/* Breadcrumb */}
       <nav className="flex items-center gap-2 text-xs text-gray-400 mb-6">
         <Link href="/gallery" className="hover:text-gray-600 transition-colors">
-          {t("photoDetail.gallery")}
-        </Link>
-        <span>/</span>
-        <Link
-          href={`/collection/${family}`}
-          className="hover:text-gray-600 transition-colors"
-        >
-          {label}
+          Gallery
         </Link>
         <span>/</span>
         <span className="text-gray-600 truncate max-w-[120px]">
@@ -48,116 +57,63 @@ export default function PhotoDetailClient({
         <div className="lg:col-span-2">
           <div className="rounded-xl overflow-hidden bg-gray-100">
             <img
-              src={photo.image_url}
-              alt={`Photo with dominant color ${photo.dominant_hex}`}
+              src={photo.dataUrl}
+              alt={photo.name}
               className="w-full h-auto object-cover"
             />
           </div>
         </div>
 
-        {/* Sidebar info */}
+        {/* Sidebar */}
         <div className="space-y-6">
           <div>
-            <h1 className="text-lg font-semibold text-gray-900 mb-4">
-              {t("photoDetail.details")}
-            </h1>
+            <h1 className="text-lg font-semibold text-gray-900 mb-4">Details</h1>
 
-            {/* Color info card */}
             <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-4">
+              {/* HEX swatch */}
               <div className="flex items-center gap-3">
                 <div
-                  className="w-6 h-6 rounded-lg"
-                  style={{ backgroundColor: photo.dominant_hex }}
+                  className="w-6 h-6 rounded-lg shadow-sm"
+                  style={{ backgroundColor: hex }}
                 />
                 <div>
-                  <div className="text-xs text-gray-400">
-                    {t("photoDetail.dominantColor")}
-                  </div>
+                  <div className="text-xs text-gray-400">Dominant Color</div>
                   <div className="text-sm font-medium text-gray-900 font-mono">
-                    {photo.dominant_hex}
+                    {hex}
                   </div>
                 </div>
               </div>
 
+              {/* Color family */}
               <div className="flex items-center gap-3">
                 <div
                   className="w-6 h-6 rounded-lg flex items-center justify-center"
-                  style={{ backgroundColor: hex }}
+                  style={{ backgroundColor: swatchColor }}
                 >
                   <span className="text-[8px] font-bold text-white mix-blend-difference">
                     {label[0]}
                   </span>
                 </div>
                 <div>
-                  <div className="text-xs text-gray-400">
-                    {t("photoDetail.colorFamily")}
-                  </div>
-                  <Link
-                    href={`/collection/${family}`}
-                    className="text-sm font-medium text-gray-900 hover:underline"
-                  >
+                  <div className="text-xs text-gray-400">Color Family</div>
+                  <div className="text-sm font-medium text-gray-900">
                     {label}
-                  </Link>
+                  </div>
                 </div>
-              </div>
-
-              <div className="pt-2 border-t border-gray-50">
-                <div className="text-xs text-gray-400">
-                  {t("photoDetail.uploaded")}
-                </div>
-                <div className="text-sm text-gray-700">{createdDate}</div>
               </div>
             </div>
           </div>
 
-          {/* Schema.org */}
-          <script
-            type="application/ld+json"
-            dangerouslySetInnerHTML={{
-              __html: JSON.stringify({
-                "@context": "https://schema.org",
-                "@type": "ImageObject",
-                contentUrl: photo.image_url,
-                color: photo.dominant_hex,
-                uploadDate: photo.created_at,
-              }),
-            }}
-          />
+          {/* Download button */}
+          <a
+            href={photo.dataUrl}
+            download={photo.name}
+            className="inline-flex items-center justify-center w-full px-4 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-colors"
+          >
+            Download Image
+          </a>
         </div>
       </div>
-
-      {/* Related photos */}
-      {related.length > 0 && (
-        <section className="mt-14">
-          <div className="flex items-center gap-2 mb-6">
-            <div
-              className="w-3 h-3 rounded-full"
-              style={{ backgroundColor: hex }}
-            />
-            <h2 className="text-sm font-semibold text-gray-700">
-              {t("photoDetail.moreIn", { label })}
-            </h2>
-          </div>
-          <div className="columns-2 sm:columns-3 md:columns-4 gap-4">
-            {related.map((r) => (
-              <Link
-                key={r.id}
-                href={`/photo/${r.id}`}
-                className="block mb-4 break-inside-avoid group"
-              >
-                <div className="relative rounded-xl overflow-hidden bg-gray-100">
-                  <img
-                    src={r.image_url}
-                    alt={`Photo ${r.dominant_hex}`}
-                    className="w-full h-auto object-cover group-hover:opacity-95 transition-opacity"
-                    loading="lazy"
-                  />
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
 
       {/* Ad — bottom of photo detail page */}
       <AdsPlaceholder format="leaderboard" className="mt-10" />

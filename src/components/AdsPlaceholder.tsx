@@ -1,84 +1,56 @@
 "use client";
 
-import { useEffect, useId } from "react";
+import { useEffect, useRef } from "react";
 
-interface AdsPlaceholderProps {
-  className?: string;
-  format?: "banner" | "rectangle" | "leaderboard" | "auto";
-  label?: string;
-  /** Optional ad unit slot ID. If omitted, uses responsive auto-format. */
-  adSlot?: string;
-}
-
-const FORMAT_STYLES: Record<string, string> = {
-  banner: "h-[90px]",
-  rectangle: "h-[250px]",
-  leaderboard: "h-[90px]",
-  auto: "min-h-[100px]",
-};
-
-const RAW_CLIENT = (process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID || "").trim();
-
-/** Normalise to `ca-pub-XXXXXXXX` format (accepts bare pub-, ca-pub-, etc.). */
-function normaliseClient(raw: string): string {
-  const cleaned = raw.replace(/^(ca-)?pub-?/i, "");
-  return `ca-pub-${cleaned}`;
-}
-
-const AD_CLIENT = RAW_CLIENT ? normaliseClient(RAW_CLIENT) : "";
+const PUBLISHER_ID = process.env.NEXT_PUBLIC_ADSENSE_ID || "";
 
 export default function AdsPlaceholder({
+  format = "auto",
   className = "",
-  format = "rectangle",
-  label,
   adSlot,
-}: AdsPlaceholderProps) {
-  const id = useId();
+}: {
+  format?: "auto" | "banner" | "leaderboard";
+  className?: string;
+  adSlot?: string;
+}) {
+  const adRef = useRef<HTMLDivElement>(null);
+  const initialized = useRef(false);
 
-  // ── Real AdSense ad ──
-  if (AD_CLIENT) {
-    // Notify AdSense script to render this unit
-    useEffect(() => {
-      try {
-        const w = window as unknown as { adsbygoogle?: unknown[] };
-        if (w.adsbygoogle) {
-          w.adsbygoogle.push({});
-        }
-      } catch {
-        // Silently fail — ads may be blocked
-      }
-    }, []);
+  useEffect(() => {
+    if (!PUBLISHER_ID || initialized.current || !adRef.current) return;
 
-    const adFormat = adSlot ? (format === "rectangle" ? "auto" : format) : "auto";
+    try {
+      const adsbygoogle = (window as any).adsbygoogle || [];
+      adsbygoogle.push({});
+      initialized.current = true;
+    } catch {
+      // AdBlock or no network
+    }
+  }, []);
 
+  if (!PUBLISHER_ID) {
     return (
       <div
-        className={`w-full flex justify-center ${className}`}
-        data-ad-format={adFormat}
+        className={`flex items-center justify-center bg-gray-50 border border-dashed border-gray-200 rounded-lg ${className}`}
+        style={{ minHeight: format === "leaderboard" ? 90 : format === "banner" ? 60 : 60 }}
       >
-        <ins
-          className={`adsbygoogle ${FORMAT_STYLES[format] || FORMAT_STYLES.auto}`}
-          style={{ display: "block", minWidth: "300px" }}
-          data-ad-client={AD_CLIENT}
-          {...(adSlot ? { "data-ad-slot": adSlot } : {})}
-          data-ad-format={adFormat}
-          data-full-width-responsive="true"
-        />
+        <span className="text-[10px] text-gray-300 uppercase tracking-wider">
+          Ad Space
+        </span>
       </div>
     );
   }
 
-  // ── Placeholder when AdSense not configured ──
   return (
-    <div
-      id={`ad-placeholder-${id}`}
-      className={`w-full ${FORMAT_STYLES[format] || FORMAT_STYLES.auto} bg-gray-50 border border-dashed border-gray-200 rounded-xl flex items-center justify-center select-none ${className}`}
-      data-ad-format={format}
-      data-ad-ready="false"
-    >
-      <span className="text-[10px] text-gray-300 uppercase tracking-widest">
-        {label || "Ad Space"}
-      </span>
+    <div ref={adRef} className={className}>
+      <ins
+        className="adsbygoogle"
+        style={{ display: "block" }}
+        data-ad-client={PUBLISHER_ID}
+        data-ad-slot={adSlot || undefined}
+        data-ad-format={format}
+        data-full-width-responsive="true"
+      />
     </div>
   );
 }

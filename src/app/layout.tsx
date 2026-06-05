@@ -1,88 +1,59 @@
 import type { Metadata } from "next";
-import "./globals.css";
-import Header from "@/components/Header";
-import FooterContent from "@/components/Footer";
-import { LanguageProvider } from "@/lib/LanguageContext";
 import { siteConfig } from "@/data/siteConfig";
+import Header from "@/components/Header";
+import Footer from "@/components/Footer";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: {
-    default: "Color Archive — Sort Your Images by Color Automatically",
-    template: `%s — ${siteConfig.name}`,
-  },
+  title: siteConfig.name,
   description: siteConfig.description,
   metadataBase: new URL(siteConfig.url),
-  alternates: { canonical: "/" },
   openGraph: {
-    siteName: siteConfig.name,
-    type: "website",
-    locale: "en_US",
-  },
-  twitter: {
-    card: "summary_large_image",
-  },
-  robots: {
-    index: true,
-    follow: true,
+    title: siteConfig.name,
+    description: siteConfig.description,
   },
 };
 
+const GA_ID = process.env.NEXT_PUBLIC_GA_ID;
+
 export default function RootLayout({
   children,
-}: Readonly<{
+}: {
   children: React.ReactNode;
-}>) {
+}) {
   return (
     <html lang="en">
       <head>
-        {/* Google Analytics placeholder — inject GA script via NEXT_PUBLIC_GA_ID */}
-        {siteConfig.analytics.gaId && (
+        {GA_ID && (
+          <>
+            <script
+              async
+              src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`}
+            />
+            <script
+              dangerouslySetInnerHTML={{
+                __html: `
+                  window.dataLayer = window.dataLayer || [];
+                  function gtag(){dataLayer.push(arguments);}
+                  gtag('js', new Date());
+                  gtag('config', '${GA_ID}', { page_path: window.location.pathname });
+                `,
+              }}
+            />
+          </>
+        )}
+        {process.env.NEXT_PUBLIC_ADSENSE_ID && (
           <script
             async
-            src={`https://www.googletagmanager.com/gtag/js?id=${siteConfig.analytics.gaId}`}
-          />
-        )}
-        {siteConfig.analytics.gaId && (
-          <script
-            dangerouslySetInnerHTML={{
-              __html: `
-                window.dataLayer = window.dataLayer || [];
-                function gtag(){dataLayer.push(arguments);}
-                gtag('js', new Date());
-                gtag('config', '${siteConfig.analytics.gaId}');
-              `,
-            }}
-          />
-        )}
-        {/* Google AdSense — loaded only when client ID is configured */}
-        {process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID && (
-          <script
-            async
-            src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${process.env.NEXT_PUBLIC_ADSENSE_CLIENT_ID}`}
+            src={`https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${process.env.NEXT_PUBLIC_ADSENSE_ID}`}
             crossOrigin="anonymous"
           />
         )}
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              "@context": "https://schema.org",
-              "@type": "WebApplication",
-              name: siteConfig.name,
-              description: siteConfig.description,
-              url: siteConfig.url,
-              applicationCategory: "Multimedia",
-              operatingSystem: "All",
-            }),
-          }}
-        />
       </head>
-      <body className="bg-[#f8f9fa] text-gray-900 antialiased min-h-screen flex flex-col">
-        <LanguageProvider>
-          <Header />
-          <main className="flex-1">{children}</main>
-          <FooterContent />
-        </LanguageProvider>
+      <body className="font-sans bg-white text-gray-900 antialiased min-h-screen flex flex-col">
+        <Header />
+        <main className="flex-1">{children}</main>
+        <Footer />
       </body>
     </html>
   );

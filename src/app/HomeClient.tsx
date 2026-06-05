@@ -1,331 +1,155 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import ImageCard from "@/components/ImageCard";
-import UploadZone from "@/components/UploadZone";
-import {
-  extractDominantColors,
-  determineCategory,
-} from "@/lib/colorAnalysis";
-import type { ColorCategory, ImageData } from "@/lib/types";
-import {
-  CATEGORY_COLORS,
-  CATEGORY_LABELS,
-  CATEGORY_ORDER,
-} from "@/lib/types";
-import { useLanguage } from "@/lib/LanguageContext";
+import { useState, useCallback, useRef } from "react";
+import { useRouter } from "next/navigation";
+import type { ImageData, DominantColor, ColorCategory } from "@/lib/types";
+import { extractDominantColors, determineCategory } from "@/lib/colorAnalysis";
 
 const STORAGE_KEY = "color-archive-images";
 
-function loadFromStorage(): ImageData[] {
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 9);
+}
+
+function loadExisting(): ImageData[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    return JSON.parse(raw);
+    return raw ? JSON.parse(raw) : [];
   } catch {
     return [];
   }
 }
 
+function saveImages(images: ImageData[]): void {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(images));
+}
+
 export default function HomeClient() {
-  const [images, setImages] = useState<ImageData[]>([]);
-  const [activeFilter, setActiveFilter] = useState<ColorCategory | "all">(
-    "all"
-  );
+  const router = useRouter();
   const [processing, setProcessing] = useState(false);
-  const [publishingIds, setPublishingIds] = useState<Set<string>>(new Set());
-  const { t } = useLanguage();
+  const [dragOver, setDragOver] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Load from localStorage on mount
-  useEffect(() => {
-    const stored = loadFromStorage();
-    if (stored.length > 0) setImages(stored);
-  }, []);
-
-  // Save to localStorage on change
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(images));
-    } catch {
-      // quota exceeded, silently fail
-    }
-  }, [images]);
-
-  const processFile = useCallback(async (file: File): Promise<ImageData> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        const dataUrl = e.target?.result as string;
-        try {
-          const dominantColors = await extractDominantColors(dataUrl, 100);
-          const category = determineCategory(dominantColors);
-          resolve({
-            id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-            name: file.name,
-            dataUrl,
-            originalFile: file,
-            dominantColors,
-            category,
-            manualCategory: null,
-            published: false,
-          });
-        } catch (err) {
-          reject(err);
-        }
-      };
-      reader.onerror = () => reject(new Error("File read error"));
-      reader.readAsDataURL(file);
-    });
-  }, []);
-
-  const handleFiles = useCallback(
+  const processFiles = useCallback(
     async (files: File[]) => {
       setProcessing(true);
-      const results: ImageData[] = [];
-      const batchSize = 3;
-      for (let i = 0; i < files.length; i += batchSize) {
-        const batch = files.slice(i, i + batchSize);
-        const batchResults = await Promise.allSettled(
-          batch.map((f) => processFile(f))
-        );
-        for (const result of batchResults) {
-          if (result.status === "fulfilled") {
-            results.push(result.value);
-          }
+      const existing = loadExisting();
+      const newImages: ImageData[] = [];
+
+      for (const file of files) {
+        if (!file.type.startsWith("image/")) continue;
+
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+
+        let dominantColors: DominantColor[] = [];
+        try {
+          dominantColors = await extractDominantColors(dataUrl);
+        } catch {
+          // fallback: empty colors
         }
-        if (i + batchSize < files.length) {
-          await new Promise((r) => setTimeout(r, 50));
-        }
+
+        const category: ColorCategory =
+          dominantColors.length > 0
+            ? determineCategory(dominantColors)
+            : "uncategorized";
+
+        newImages.push({
+          id: generateId(),
+          name: file.name,
+          dataUrl,
+          dominantColors,
+          category,
+          manualCategory: null,
+        });
       }
-      setImages((prev) => [...results, ...prev]);
+
+      saveImages([...newImages, ...existing]);
       setProcessing(false);
+      router.push("/gallery");
     },
-    [processFile]
+    [router]
   );
 
-  const handleDelete = useCallback((id: string) => {
-    setImages((prev) => prev.filter((img) => img.id !== id));
-  }, []);
-
-  const handleClearAll = useCallback(() => {
-    if (confirm(t("home.confirmClear"))) {
-      setImages([]);
-    }
-  }, [t]);
-
-  const handleCategoryChange = useCallback(
-    (id: string, category: ColorCategory) => {
-      setImages((prev) =>
-        prev.map((img) =>
-          img.id === id ? { ...img, manualCategory: category } : img
-        )
-      );
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragOver(false);
+      const files = Array.from(e.dataTransfer.files);
+      if (files.length > 0) processFiles(files);
     },
-    []
+    [processFiles]
   );
 
-  const handlePublish = useCallback(async (id: string) => {
-    const img = images.find((i) => i.id === id);
-    if (!img || !img.originalFile) return;
-
-    setPublishingIds((prev) => new Set(prev).add(id));
-
-    try {
-      const category = img.manualCategory ?? img.category;
-      const hex = img.dominantColors[0]?.hex || "#000000";
-
-      const formData = new FormData();
-      formData.append("file", img.originalFile);
-      formData.append("dominantHex", hex);
-      formData.append("colorFamily", category);
-
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (res.ok) {
-        setImages((prev) =>
-          prev.map((i) =>
-            i.id === id ? { ...i, published: true } : i
-          )
-        );
-      } else {
-        const errData = await res.json();
-        console.error("Publish error:", errData.error);
-      }
-    } catch (err) {
-      console.error("Publish error:", err);
-    } finally {
-      setPublishingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(id);
-        return next;
-      });
-    }
-  }, [images]);
-
-  const groupedImages = useMemo(() => {
-    const groups = new Map<ColorCategory, ImageData[]>();
-    for (const cat of CATEGORY_ORDER) {
-      groups.set(cat, []);
-    }
-    const effectiveImages = images.map((img) => ({
-      ...img,
-      effectiveCategory: img.manualCategory ?? img.category,
-    }));
-    for (const img of effectiveImages) {
-      const cat = img.effectiveCategory;
-      const arr = groups.get(cat);
-      if (arr) arr.push(img);
-    }
-    return groups;
-  }, [images]);
-
-  const filteredGroups = useMemo(() => {
-    if (activeFilter === "all") return groupedImages;
-    const filtered = new Map<ColorCategory, ImageData[]>();
-    for (const [cat, imgs] of groupedImages) {
-      filtered.set(cat, cat === activeFilter ? imgs : []);
-    }
-    return filtered;
-  }, [groupedImages, activeFilter]);
-
-  const handleExport = useCallback(() => {
-    const data = images.map((img) => ({
-      name: img.name,
-      category: img.manualCategory ?? img.category,
-      dominantColors: img.dominantColors.map((c) => ({
-        hex: c.hex,
-        percentage: c.percentage,
-      })),
-    }));
-    const blob = new Blob([JSON.stringify(data, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `color-archive-${Date.now()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, [images]);
-
-  const totalCount = images.length;
+  const handleFileSelect = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files;
+      if (files && files.length > 0) processFiles(Array.from(files));
+    },
+    [processFiles]
+  );
 
   return (
-    <section className="max-w-6xl mx-auto px-4 pb-8">
-      {/* Upload zone */}
-      <div className="mb-6">
-        <UploadZone onFiles={handleFiles} />
-        {processing && (
-          <div className="mt-3 text-center text-sm text-gray-500">
-            {t("home.processing")}
-          </div>
-        )}
-      </div>
+    <div className="min-h-[calc(100vh-6rem)] flex flex-col items-center justify-center px-4">
+      <div className="text-center max-w-md">
+        <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 tracking-tight mb-2">
+          Color Archive
+        </h1>
+        <p className="text-sm text-gray-500 mb-10">
+          Upload images and browse them by color.
+        </p>
 
-      {totalCount > 0 && (
-        <>
-          {/* Action bar */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="text-xs text-gray-400">
-              {totalCount === 1
-                ? t("home.imageCount", { count: 1 })
-                : t("home.imageCountPlural", { count: totalCount })}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleExport}
-                className="text-xs px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-600 hover:bg-gray-100 transition-colors"
-              >
-                {t("home.exportJson")}
-              </button>
-              <button
-                onClick={handleClearAll}
-                className="text-xs px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-red-500 hover:bg-red-50 transition-colors"
-              >
-                {t("home.clearAll")}
-              </button>
-            </div>
-          </div>
-
-          {/* Filter bar */}
-          <div className="mb-6 overflow-x-auto">
-            <div className="flex gap-2 pb-2">
-              <button
-                onClick={() => setActiveFilter("all")}
-                className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                  activeFilter === "all"
-                    ? "bg-gray-900 text-white border-gray-900"
-                    : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
-                }`}
-              >
-                {t("home.filterAll")} ({totalCount})
-              </button>
-              {CATEGORY_ORDER.map((cat) => {
-                const count = groupedImages.get(cat)?.length ?? 0;
-                if (count === 0) return null;
-                return (
-                  <button
-                    key={cat}
-                    onClick={() => setActiveFilter(cat)}
-                    className={`shrink-0 text-xs px-3 py-1.5 rounded-full border transition-colors flex items-center gap-1.5 ${
-                      activeFilter === cat
-                        ? "bg-gray-900 text-white border-gray-900"
-                        : "bg-white text-gray-600 border-gray-200 hover:border-gray-400"
-                    }`}
-                  >
-                    <span
-                      className="w-2 h-2 rounded-full"
-                      style={{ backgroundColor: CATEGORY_COLORS[cat] }}
-                    />
-                    {CATEGORY_LABELS[cat]} ({count})
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Groups */}
-          {CATEGORY_ORDER.map((cat) => {
-            const items = filteredGroups.get(cat) ?? [];
-            if (items.length === 0) return null;
-            return (
-              <div key={cat} className="mb-10">
-                <div className="flex items-center gap-2 mb-4">
-                  <div
-                    className="w-3 h-3 rounded-full"
-                    style={{ backgroundColor: CATEGORY_COLORS[cat] }}
-                  />
-                  <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wider">
-                    {CATEGORY_LABELS[cat]}
-                  </h2>
-                  <span className="text-xs text-gray-400">{items.length}</span>
-                </div>
-                <div className="columns-2 sm:columns-3 md:columns-4 lg:columns-5 gap-4">
-                  {items.map((img) => (
-                    <ImageCard
-                      key={img.id}
-                      image={img}
-                      onDelete={handleDelete}
-                      onCategoryChange={handleCategoryChange}
-                      onPublish={handlePublish}
-                      publishing={publishingIds.has(img.id)}
-                    />
-                  ))}
-                </div>
+        <div
+          className={`relative border-2 border-dashed rounded-2xl bg-white transition-colors cursor-pointer ${
+            dragOver
+              ? "border-gray-400 bg-gray-50"
+              : "border-gray-200 hover:border-gray-300"
+          }`}
+          style={{ minHeight: "280px" }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragOver(true);
+          }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => inputRef.current?.click()}
+        >
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-8">
+            {processing ? (
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin" />
+                <span className="text-xs text-gray-400">Processing...</span>
               </div>
-            );
-          })}
-        </>
-      )}
-
-      {totalCount === 0 && !processing && (
-        <div className="text-center py-16 text-gray-400 text-sm">
-          {t("home.getStarted")}
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="inline-flex items-center px-6 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    inputRef.current?.click();
+                  }}
+                >
+                  选择图片
+                </button>
+                <p className="mt-3 text-xs text-gray-400">支持拖拽上传</p>
+              </>
+            )}
+          </div>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={handleFileSelect}
+          />
         </div>
-      )}
-    </section>
+      </div>
+    </div>
   );
 }
