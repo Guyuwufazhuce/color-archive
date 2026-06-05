@@ -130,21 +130,6 @@ export default function GalleryClient() {
         <h1 className="text-lg font-semibold text-gray-900 tracking-tight">
           {pageTitle(activeFilter)}
         </h1>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={handleReanalyze}
-            disabled={reanalyzing}
-            className="text-[10px] text-gray-400 hover:text-gray-600 disabled:text-gray-300 transition-colors"
-          >
-            {reanalyzing ? "Analyzing…" : "Reanalyze"}
-          </button>
-          <Link
-            href="/"
-            className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
-          >
-            Upload more
-          </Link>
-        </div>
       </div>
 
       {/* Reanalyze status toast */}
@@ -163,8 +148,8 @@ export default function GalleryClient() {
 
       {/* Color Filter Bar — always visible once there are images */}
       {images.length > 0 && (
-        <div className="mb-10">
-          <div className="flex flex-wrap gap-x-4 gap-y-6 items-start">
+        <div className="mb-10 flex items-start justify-between gap-4">
+          <div className="flex flex-wrap gap-x-4 gap-y-6 items-start flex-1">
             {CATEGORIES.map((cat) => {
               const isActive = activeFilter === cat.name;
               const count = images.filter((img) => {
@@ -194,6 +179,26 @@ export default function GalleryClient() {
               );
             })}
           </div>
+          <button
+            onClick={handleReanalyze}
+            disabled={reanalyzing}
+            className="flex-shrink-0 flex items-center gap-1.5 h-9 px-4 rounded-full bg-[#f5f5f5] hover:bg-[#e9e9e9] disabled:opacity-50 disabled:cursor-not-allowed text-[#444] text-xs font-medium transition-colors"
+          >
+            <svg
+              className={`w-3.5 h-3.5 ${reanalyzing ? "animate-spin" : ""}`}
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <polyline points="1 20 1 14 7 14" />
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+            </svg>
+            {reanalyzing ? "Reanalyzing…" : "Reanalyze"}
+          </button>
         </div>
       )}
 
