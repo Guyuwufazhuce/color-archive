@@ -6,6 +6,7 @@ export interface ImageData {
   src: string;
   dominantColor: string;
   category: string;
+  palette: string[];
   createdAt: number;
 }
 

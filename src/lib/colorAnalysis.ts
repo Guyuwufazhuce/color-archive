@@ -1,6 +1,4 @@
 // ─── Dominant Color Extraction ──────────────────────────────
-// Extracts the most significant non-background color from an image.
-// Returns a HEX string like "#ff3366".
 
 function quantize(val: number, step = 32): number {
   return Math.round(val / step) * step;
@@ -26,10 +24,6 @@ function colorDistance(
   return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2);
 }
 
-/**
- * Load and downsample an image from a data URL onto a canvas.
- * Returns the ImageData for pixel analysis.
- */
 function downsampledImageData(
   src: string,
   maxPixels: number
@@ -55,16 +49,11 @@ function downsampledImageData(
 
 /**
  * Extract the most dominant color from an image.
- * @param dataUrl - A data URL string (data:image/...)
- * @returns Promise resolving to a HEX color string (e.g. "#ff6633")
  */
 export async function extractDominantColor(dataUrl: string): Promise<string> {
-  console.log("[colorAnalysis] Starting dominant color extraction");
-
   const imageData = await downsampledImageData(dataUrl, 100);
   const pixels = imageData.data;
 
-  // Bucket quantized colors
   const buckets = new Map<string, { r: number; g: number; b: number; count: number }>();
 
   for (let i = 0; i < pixels.length; i += 4) {
@@ -85,15 +74,10 @@ export async function extractDominantColor(dataUrl: string): Promise<string> {
     }
   }
 
-  if (buckets.size === 0) {
-    console.log("[colorAnalysis] No non-background pixels found, returning fallback");
-    return "#999999";
-  }
+  if (buckets.size === 0) return "#999999";
 
-  // Sort by popularity
   const sorted = Array.from(buckets.values()).sort((a, b) => b.count - a.count);
 
-  // Merge similar colors within distance 50
   const merged: typeof sorted = [];
   for (const c of sorted) {
     let merged_ = false;
@@ -108,15 +92,63 @@ export async function extractDominantColor(dataUrl: string): Promise<string> {
   }
 
   merged.sort((a, b) => b.count - a.count);
-  const top = merged[0];
-  const hex = rgbToHex(top.r, top.g, top.b);
-
-  console.log(`[colorAnalysis] Dominant color: ${hex} (${top.count} samples)`);
-  return hex;
+  return rgbToHex(merged[0].r, merged[0].g, merged[0].b);
 }
 
-// ─── Color Classification ────────────────────────────────────
-// Maps a HEX color string to one of 10 category names.
+/**
+ * Extract a palette of up to N dominant colors from an image.
+ * Returns sorted by frequency descending.
+ */
+export async function extractPalette(
+  dataUrl: string,
+  count: number = 5
+): Promise<string[]> {
+  const imageData = await downsampledImageData(dataUrl, 100);
+  const pixels = imageData.data;
+
+  const buckets = new Map<string, { r: number; g: number; b: number; count: number }>();
+
+  for (let i = 0; i < pixels.length; i += 4) {
+    const r = pixels[i];
+    const g = pixels[i + 1];
+    const b = pixels[i + 2];
+    const a = pixels[i + 3];
+
+    if (a < 128) continue;
+    if (isBackground(r, g, b)) continue;
+
+    const key = `${quantize(r)},${quantize(g)},${quantize(b)}`;
+    const existing = buckets.get(key);
+    if (existing) {
+      existing.count++;
+    } else {
+      buckets.set(key, { r, g, b, count: 1 });
+    }
+  }
+
+  if (buckets.size === 0) return ["#999999"];
+
+  const sorted = Array.from(buckets.values()).sort((a, b) => b.count - a.count);
+
+  // Merge similar colors
+  const merged: typeof sorted = [];
+  for (const c of sorted) {
+    let merged_ = false;
+    for (const m of merged) {
+      if (colorDistance(c.r, c.g, c.b, m.r, m.g, m.b) < 35) {
+        m.count += c.count;
+        merged_ = true;
+        break;
+      }
+    }
+    if (!merged_) merged.push({ ...c });
+  }
+
+  merged.sort((a, b) => b.count - a.count);
+  return merged.slice(0, count).map((c) => rgbToHex(c.r, c.g, c.b));
+}
+
+// ─── Color Classification (18 categories) ──────────────────
 
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -128,14 +160,7 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   };
 }
 
-/**
- * Classify a hex color into one of 10 categories:
- * Red, Orange, Yellow, Green, Cyan, Blue, Purple, Pink, Brown, Gray
- */
-export function classifyHex(hex: string): string {
-  const { r, g, b } = hexToRgb(hex);
-
-  // Reuse HSL from local scope
+function toHSL(r: number, g: number, b: number): { h: number; s: number; l: number } {
   const rr = r / 255;
   const gg = g / 255;
   const bb = b / 255;
@@ -162,24 +187,44 @@ export function classifyHex(hex: string): string {
     h *= 360;
   }
 
-  const sat = s * 100;
-  const light = l * 100;
+  return { h, s: s * 100, l: l * 100 };
+}
+
+/**
+ * Classify a hex color into one of 18 categories:
+ * Red, Orange, Amber, Yellow, Lime, Green, Mint, Cyan, Sky, Blue,
+ * Indigo, Purple, Pink, Rose, Brown, Gray, Black, White
+ */
+export function classifyHex(hex: string): string {
+  const { r, g, b } = hexToRgb(hex);
+  const { h, s, l } = toHSL(r, g, b);
+
+  // Pure black / white
+  if (l < 6) return "Black";
+  if (l > 93 && s < 8) return "White";
 
   // Grayscale
-  if (sat < 10) return "Gray";
+  if (s < 8) return "Gray";
 
-  // Brown: low-light, low-sat, orange hue
-  if (light < 40 && sat < 50 && h >= 15 && h <= 70) return "Brown";
+  // Brown: low lightness warm hues
+  if (l < 35 && s < 55 && h >= 10 && h <= 70) return "Brown";
+  if (l < 30 && s < 60 && h >= 0 && h < 10) return "Brown";
 
-  // Hue-based
-  if (h >= 345 || h < 15) return "Red";
-  if (h >= 15 && h < 45) return "Orange";
-  if (h >= 45 && h < 70) return "Yellow";
-  if (h >= 70 && h < 170) return "Green";
-  if (h >= 170 && h < 200) return "Cyan";
-  if (h >= 200 && h < 250) return "Blue";
-  if (h >= 250 && h < 290) return "Purple";
-  if (h >= 290 && h < 345) return "Pink";
+  // Hue-based fine classification
+  if (h >= 345 || h < 8) return "Red";
+  if (h >= 8 && h < 25) return "Orange";
+  if (h >= 25 && h < 43) return "Amber";
+  if (h >= 43 && h < 65) return "Yellow";
+  if (h >= 65 && h < 85) return "Lime";
+  if (h >= 85 && h < 140) return "Green";
+  if (h >= 140 && h < 165) return "Mint";
+  if (h >= 165 && h < 190) return "Cyan";
+  if (h >= 190 && h < 215) return "Sky";
+  if (h >= 215 && h < 240) return "Blue";
+  if (h >= 240 && h < 265) return "Indigo";
+  if (h >= 265 && h < 305) return "Purple";
+  if (h >= 305 && h < 330) return "Pink";
+  if (h >= 330 && h < 345) return "Rose";
 
   return "Gray";
 }
