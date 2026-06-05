@@ -38,6 +38,10 @@ function formatDate(ts: number): string {
   });
 }
 
+function pageTitle(filter: ColorFilter): string {
+  return filter ?? "Select a color to browse images.";
+}
+
 export default function GalleryClient() {
   const [images, setImages] = useState<ImageData[]>([]);
   const [activeFilter, setActiveFilter] = useState<ColorFilter>(null);
@@ -53,15 +57,12 @@ export default function GalleryClient() {
     setVisibleCount(PAGE_SIZE);
   }, [activeFilter]);
 
-  // All images matching current filter
+  // Only show images when a color filter is active
   const filteredImages = useMemo(() => {
-    if (activeFilter) {
-      return images.filter((img) => img.color_name === activeFilter);
-    }
-    return images;
+    if (activeFilter === null) return [];
+    return images.filter((img) => img.color_name === activeFilter);
   }, [images, activeFilter]);
 
-  // Slice for display
   const displayImages = useMemo(() => {
     return filteredImages.slice(0, visibleCount);
   }, [filteredImages, visibleCount]);
@@ -94,12 +95,16 @@ export default function GalleryClient() {
     setVisibleCount((prev) => prev + PAGE_SIZE);
   }, []);
 
+  const isEmptyGallery = images.length === 0;
+  const noColorSelected = activeFilter === null;
+  const noMatch = activeFilter !== null && filteredImages.length === 0;
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <h1 className="text-lg font-semibold text-gray-900 tracking-tight">
-          {activeFilter ? activeFilter : "Latest"}
+          {pageTitle(activeFilter)}
         </h1>
         <Link
           href="/"
@@ -116,40 +121,10 @@ export default function GalleryClient() {
         </div>
       )}
 
-      {/* Color Filter Bar */}
+      {/* Color Filter Bar — always visible once there are images */}
       {images.length > 0 && (
         <div className="mb-10">
           <div className="flex flex-wrap gap-4 sm:gap-5 items-center">
-            {/* Grid icon for Latest */}
-            <button
-              onClick={() => {
-                setActiveFilter(null);
-              }}
-              className={`p-1 rounded-md transition-colors ${
-                activeFilter === null
-                  ? "text-gray-900 bg-gray-100"
-                  : "text-gray-300 hover:text-gray-500"
-              }`}
-              title="Latest"
-            >
-              <svg
-                width="16"
-                height="16"
-                viewBox="0 0 16 16"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="1" y="1" width="6" height="6" />
-                <rect x="9" y="1" width="6" height="6" />
-                <rect x="1" y="9" width="6" height="6" />
-                <rect x="9" y="9" width="6" height="6" />
-              </svg>
-            </button>
-
-            {/* Color dots */}
             {CATEGORIES.map((cat) => {
               const isActive = activeFilter === cat.name;
               return (
@@ -179,20 +154,41 @@ export default function GalleryClient() {
         </div>
       )}
 
-      {/* Empty state */}
-      {displayImages.length === 0 ? (
+      {/* Empty states */}
+      {isEmptyGallery && (
         <div className="text-center py-24">
-          <p className="text-gray-300 text-sm mb-4">
-            {images.length === 0 ? "Empty Gallery" : "No images match this color"}
-          </p>
+          <p className="text-gray-300 text-sm mb-4">Empty Gallery</p>
           <Link
             href="/"
             className="inline-block px-5 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-colors"
           >
-            {images.length === 0 ? "Upload your first image" : "Show all"}
+            Upload your first image
           </Link>
         </div>
-      ) : (
+      )}
+
+      {!isEmptyGallery && noColorSelected && (
+        <div className="text-center py-24">
+          <p className="text-gray-300 text-sm">Select a color to browse images.</p>
+        </div>
+      )}
+
+      {noMatch && (
+        <div className="text-center py-24">
+          <p className="text-gray-300 text-sm mb-4">
+            No images match this color
+          </p>
+          <button
+            onClick={() => setActiveFilter(null)}
+            className="inline-block px-5 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-colors"
+          >
+            Browse all colors
+          </button>
+        </div>
+      )}
+
+      {/* Image grid — only when a color is selected and results exist */}
+      {!noColorSelected && displayImages.length > 0 && (
         <>
           <div className="masonry-grid" style={{ columnCount: 2, columnGap: 32 }}>
             {displayImages.map((img) => (
@@ -203,7 +199,7 @@ export default function GalleryClient() {
                 style={{ breakInside: "avoid" }}
               >
                 <div className="relative rounded-2xl overflow-hidden bg-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                  <div className="relative w-full" style={{ aspectRatio: 'auto' }}>
+                  <div className="relative w-full" style={{ aspectRatio: "auto" }}>
                     <img
                       src={img.image_url}
                       alt={img.name}
