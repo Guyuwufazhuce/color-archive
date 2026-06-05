@@ -94,40 +94,60 @@ export default function PhotoDetailClient({ id }: { id: string }) {
                 </div>
               </div>
 
-              {/* Category */}
+              {/* Color Tags */}
               <div>
                 <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1">
-                  Category
+                  Color Tags
                 </div>
-                <div className="inline-block px-3 py-1 bg-gray-100 text-xs font-medium text-gray-700 rounded-full">
-                  {photo.color_name}
+                <div className="flex gap-1.5 flex-wrap">
+                  {(photo.color_tags ?? [photo.color_name]).map((tag, i) => (
+                    <span
+                      key={i}
+                      className="inline-block px-3 py-1 bg-gray-100 text-xs font-medium text-gray-700 rounded-full"
+                    >
+                      {tag}
+                    </span>
+                  ))}
                 </div>
               </div>
 
-              {/* Palette */}
-              {photo.palette && photo.palette.length > 0 && (
+              {/* Dominant Colors (clusters with percentages) */}
+              {photo.dominant_colors && photo.dominant_colors.length > 0 && (
                 <div>
                   <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-2">
-                    Palette
+                    Color Clusters
                   </div>
-                  <div className="flex gap-2">
-                    {photo.palette.map((color, i) => (
-                      <div
-                        key={i}
-                        className="w-8 h-8 rounded-lg shadow-sm"
-                        style={{ backgroundColor: color }}
-                        title={color}
-                      />
-                    ))}
-                  </div>
-                  <div className="flex gap-2 mt-1.5">
-                    {photo.palette.map((color, i) => (
-                      <span
-                        key={i}
-                        className="text-[9px] font-mono text-gray-400 w-8 text-center"
-                      >
-                        {color}
-                      </span>
+                  <div className="space-y-2">
+                    {photo.dominant_colors.map((cl, i) => (
+                      <div key={i} className="flex items-center gap-2.5">
+                        <div
+                          className="w-6 h-6 rounded-lg flex-shrink-0 shadow-sm"
+                          style={{ backgroundColor: cl.hex }}
+                          title={cl.hex}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium text-gray-700">
+                              {cl.name}
+                            </span>
+                            <span className="text-[10px] font-mono text-gray-400">
+                              {cl.hex}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full"
+                              style={{
+                                width: `${Math.round(cl.percentage * 100)}%`,
+                                backgroundColor: cl.hex,
+                              }}
+                            />
+                          </div>
+                          <div className="text-[10px] text-gray-400 mt-0.5">
+                            {(cl.percentage * 100).toFixed(0)}%
+                          </div>
+                        </div>
+                      </div>
                     ))}
                   </div>
                 </div>

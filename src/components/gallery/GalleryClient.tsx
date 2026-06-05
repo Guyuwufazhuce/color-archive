@@ -58,9 +58,13 @@ export default function GalleryClient() {
   }, [activeFilter]);
 
   // Only show images when a color filter is active
+  // Uses color_tags array so images can appear under multiple categories
   const filteredImages = useMemo(() => {
     if (activeFilter === null) return [];
-    return images.filter((img) => img.color_name === activeFilter);
+    return images.filter((img) => {
+      const tags = (img.color_tags ?? [img.color_name]).map((t) => String(t));
+      return tags.includes(activeFilter);
+    });
   }, [images, activeFilter]);
 
   const displayImages = useMemo(() => {
@@ -259,6 +263,15 @@ export default function GalleryClient() {
                         />
                       ))}
                     </div>
+                    {(img.color_tags ?? [img.color_name]).length > 0 && (
+                      <div className="text-[10px] text-white/50 mt-0.5 flex gap-1 flex-wrap">
+                        {(img.color_tags ?? [img.color_name]).slice(0, 3).map((t, i) => (
+                          <span key={i} className="bg-white/20 px-1.5 rounded">
+                            {t}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                     <div className="text-[10px] text-white/50 mt-0.5">
                       {formatDate(img.created_at)}
                     </div>

@@ -1,199 +1,186 @@
-// ─── Dominant Color Extraction ──────────────────────────────
+// ─── Color Analysis — Multi-Cluster with Percentage ────────
 
-function quantize(val: number, step = 32): number {
-  return Math.round(val / step) * step;
-}
+import type { ColorCluster } from "./types";
+import type { ImageData } from "./types";
 
-function isBackground(r: number, g: number, b: number): boolean {
-  return (r > 240 && g > 240 && b > 240) || (r < 15 && g < 15 && b < 15);
-}
+// ─── Helpers ────────────────────────────────────────────────
 
 function rgbToHex(r: number, g: number, b: number): string {
-  return (
-    "#" +
-    [r, g, b]
-      .map((x) => Math.round(x).toString(16).padStart(2, "0"))
-      .join("")
-  );
+  return "#" + [r, g, b].map((x) => Math.round(x).toString(16).padStart(2, "0")).join("");
 }
 
-function colorDistance(
+function parseHex(hex: string): { r: number; g: number; b: number } {
+  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (!m) return { r: 0, g: 0, b: 0 };
+  return { r: parseInt(m[1], 16), g: parseInt(m[2], 16), b: parseInt(m[3], 16) };
+}
+
+function distSq(
   r1: number, g1: number, b1: number,
   r2: number, g2: number, b2: number
 ): number {
-  return Math.sqrt((r1 - r2) ** 2 + (g1 - g2) ** 2 + (b1 - b2) ** 2);
+  const dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
+  return dr * dr + dg * dg + db * db;
 }
 
-function downsampledImageData(
-  src: string,
-  maxPixels: number
-): Promise<ImageData> {
+// ─── Downsample image → pixel array ─────────────────────────
+
+function loadImagePixels(
+  src: string
+): Promise<{ r: number; g: number; b: number }[]> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = () => {
-      const scale = Math.min(1, maxPixels / Math.max(img.width, img.height));
+      const maxDim = 150;
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
       const w = Math.round(img.width * scale);
       const h = Math.round(img.height * scale);
       const canvas = document.createElement("canvas");
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext("2d");
-      if (!ctx) return reject(new Error("Canvas 2D context unavailable"));
+      if (!ctx) return reject(new Error("Canvas unavailable"));
       ctx.drawImage(img, 0, 0, w, h);
-      resolve(ctx.getImageData(0, 0, w, h));
+      const data = ctx.getImageData(0, 0, w, h).data;
+      const pixels: { r: number; g: number; b: number }[] = [];
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 128) continue; // skip transparent
+        pixels.push({ r: data[i], g: data[i + 1], b: data[i + 2] });
+      }
+      resolve(pixels);
     };
     img.onerror = () => reject(new Error("Failed to load image for analysis"));
     img.src = src;
   });
 }
 
-/**
- * Extract the most dominant color from an image.
- */
-export async function extractDominantColor(dataUrl: string): Promise<string> {
-  const imageData = await downsampledImageData(dataUrl, 100);
-  const pixels = imageData.data;
+// ─── K‑means (K=8, 8 iterations, merge close centroids) ────
 
-  const buckets = new Map<string, { r: number; g: number; b: number; count: number }>();
+interface Centroid {
+  r: number; g: number; b: number;
+  count: number;
+}
 
-  for (let i = 0; i < pixels.length; i += 4) {
-    const r = pixels[i];
-    const g = pixels[i + 1];
-    const b = pixels[i + 2];
-    const a = pixels[i + 3];
-    if (a < 128) continue;
-    if (isBackground(r, g, b)) continue;
-    const key = `${quantize(r)},${quantize(g)},${quantize(b)}`;
-    const existing = buckets.get(key);
-    if (existing) existing.count++;
-    else buckets.set(key, { r, g, b, count: 1 });
+function pickCentroids(
+  pixels: { r: number; g: number; b: number }[],
+  k: number
+): Centroid[] {
+  const step = Math.max(1, Math.floor(pixels.length / k));
+  const out: Centroid[] = [];
+  for (let i = 0; i < k && i * step < pixels.length; i++) {
+    const p = pixels[i * step];
+    out.push({ r: p.r, g: p.g, b: p.b, count: 0 });
+  }
+  return out;
+}
+
+function kMeans(
+  pixels: { r: number; g: number; b: number }[],
+  k: number,
+  iterations = 8
+): Centroid[] {
+  if (pixels.length === 0) return [];
+  let centroids = pickCentroids(pixels, k);
+
+  for (let iter = 0; iter < iterations; iter++) {
+    // accumulation buffers
+    const sums = centroids.map(() => ({ r: 0, g: 0, b: 0, count: 0 }));
+
+    for (const p of pixels) {
+      let bestI = 0;
+      let bestD = Infinity;
+      for (let i = 0; i < centroids.length; i++) {
+        const d = distSq(p.r, p.g, p.b, centroids[i].r, centroids[i].g, centroids[i].b);
+        if (d < bestD) { bestD = d; bestI = i; }
+      }
+      sums[bestI].r += p.r;
+      sums[bestI].g += p.g;
+      sums[bestI].b += p.b;
+      sums[bestI].count++;
+    }
+
+    for (let i = 0; i < centroids.length; i++) {
+      if (sums[i].count > 0) {
+        centroids[i] = {
+          r: sums[i].r / sums[i].count,
+          g: sums[i].g / sums[i].count,
+          b: sums[i].b / sums[i].count,
+          count: sums[i].count,
+        };
+      }
+    }
   }
 
-  if (buckets.size === 0) return "#999999";
+  // Remove empty
+  centroids = centroids.filter((c) => c.count > 0);
 
-  const sorted = Array.from(buckets.values()).sort((a, b) => b.count - a.count);
-
-  const merged: typeof sorted = [];
-  for (const c of sorted) {
-    let merged_ = false;
+  // Merge close centroids (distance < 40 in RGB)
+  const merged: Centroid[] = [];
+  const threshold = 40;
+  for (const c of centroids) {
+    let found = false;
     for (const m of merged) {
-      if (colorDistance(c.r, c.g, c.b, m.r, m.g, m.b) < 50) {
-        m.count += c.count;
-        merged_ = true;
+      if (distSq(c.r, c.g, c.b, m.r, m.g, m.b) < threshold * threshold) {
+        const total = m.count + c.count;
+        m.r = (m.r * m.count + c.r * c.count) / total;
+        m.g = (m.g * m.count + c.g * c.count) / total;
+        m.b = (m.b * m.count + c.b * c.count) / total;
+        m.count = total;
+        found = true;
         break;
       }
     }
-    if (!merged_) merged.push({ ...c });
+    if (!found) merged.push({ ...c });
   }
 
   merged.sort((a, b) => b.count - a.count);
-  return rgbToHex(merged[0].r, merged[0].g, merged[0].b);
+  return merged.slice(0, 5);
 }
 
-/**
- * Extract a palette of up to N dominant colors from an image.
- * Returns sorted by frequency descending.
- */
-export async function extractPalette(
-  dataUrl: string,
-  count: number = 5
-): Promise<string[]> {
-  const imageData = await downsampledImageData(dataUrl, 100);
-  const pixels = imageData.data;
+// ─── HSV computation ─────────────────────────────────────────
 
-  const buckets = new Map<string, { r: number; g: number; b: number; count: number }>();
-
-  for (let i = 0; i < pixels.length; i += 4) {
-    const r = pixels[i];
-    const g = pixels[i + 1];
-    const b = pixels[i + 2];
-    const a = pixels[i + 3];
-    if (a < 128) continue;
-    if (isBackground(r, g, b)) continue;
-    const key = `${quantize(r)},${quantize(g)},${quantize(b)}`;
-    const existing = buckets.get(key);
-    if (existing) existing.count++;
-    else buckets.set(key, { r, g, b, count: 1 });
-  }
-
-  if (buckets.size === 0) return ["#999999"];
-
-  const sorted = Array.from(buckets.values()).sort((a, b) => b.count - a.count);
-
-  // Merge similar colors
-  const merged: typeof sorted = [];
-  for (const c of sorted) {
-    let merged_ = false;
-    for (const m of merged) {
-      if (colorDistance(c.r, c.g, c.b, m.r, m.g, m.b) < 35) {
-        m.count += c.count;
-        merged_ = true;
-        break;
-      }
-    }
-    if (!merged_) merged.push({ ...c });
-  }
-
-  merged.sort((a, b) => b.count - a.count);
-  return merged.slice(0, count).map((c) => rgbToHex(c.r, c.g, c.b));
-}
-
-// ─── Color Classification (18 categories) ──────────────────
-
-function hexToRgb(hex: string): { r: number; g: number; b: number } {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  if (!result) return { r: 0, g: 0, b: 0 };
-  return {
-    r: parseInt(result[1], 16),
-    g: parseInt(result[2], 16),
-    b: parseInt(result[3], 16),
-  };
-}
-
-function toHSL(r: number, g: number, b: number): { h: number; s: number; l: number } {
-  const rr = r / 255;
-  const gg = g / 255;
-  const bb = b / 255;
-  const max = Math.max(rr, gg, bb);
-  const min = Math.min(rr, gg, bb);
+function toHSV(r: number, g: number, b: number): { h: number; s: number; v: number } {
+  const rr = r / 255, gg = g / 255, bb = b / 255;
+  const max = Math.max(rr, gg, bb), min = Math.min(rr, gg, bb);
+  const v = max;
+  const d = max - min;
+  const s = max === 0 ? 0 : d / max;
   let h = 0;
-  let s = 0;
-  const l = (max + min) / 2;
-
   if (max !== min) {
-    const d = max - min;
-    s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
     switch (max) {
-      case rr:
-        h = ((gg - bb) / d + (gg < bb ? 6 : 0)) / 6;
-        break;
-      case gg:
-        h = ((bb - rr) / d + 2) / 6;
-        break;
-      case bb:
-        h = ((rr - gg) / d + 4) / 6;
-        break;
+      case rr: h = ((gg - bb) / d + (gg < bb ? 6 : 0)) * 60; break;
+      case gg: h = ((bb - rr) / d + 2) * 60; break;
+      case bb: h = ((rr - gg) / d + 4) * 60; break;
     }
-    h *= 360;
   }
-
-  return { h, s: s * 100, l: l * 100 };
+  return { h: ((h % 360) + 360) % 360, s, v };
 }
 
-/**
- * Classify a single hex color into one of 18 categories.
- */
-function classifyHex(hex: string): string {
-  const { r, g, b } = hexToRgb(hex);
-  const { h, s, l } = toHSL(r, g, b);
+// ─── Single hex → category (18 categories) ──────────────────
 
-  if (l < 6) return "Black";
-  if (l > 93 && s < 8) return "White";
-  if (s < 8) return "Gray";
+export function classifyHex(hex: string): string {
+  const { r, g, b } = parseHex(hex);
+  const { h, s: sHSV, v } = toHSV(r, g, b);
+  const sPct = sHSV * 100;
+  const vPct = v * 100;
 
-  if (l < 35 && s < 55 && h >= 10 && h <= 70) return "Brown";
-  if (l < 30 && s < 60 && h >= 0 && h < 10) return "Brown";
+  // ── Black: low value ──
+  if (vPct <= 20) return "Black";
 
+  // ── White: high value, very low saturation ──
+  if (vPct > 88 && sPct < 10) return "White";
+
+  // ── Gray: low saturation, mid value ──
+  if (sPct < 10 && vPct > 20 && vPct <= 88) return "Gray";
+
+  // ── Brown: orange/red hues with muted saturation and low-medium value ──
+  if (vPct < 55 && sPct < 50) {
+    if ((h >= 10 && h < 50)) return "Brown";
+    if (h >= 0 && h < 10 && sPct < 40) return "Brown";
+    if (h >= 330 && h < 360 && vPct < 40) return "Brown";
+  }
+
+  // ── Chromatic: use hue ──
   if (h >= 345 || h < 8) return "Red";
   if (h >= 8 && h < 25) return "Orange";
   if (h >= 25 && h < 43) return "Amber";
@@ -209,40 +196,110 @@ function classifyHex(hex: string): string {
   if (h >= 305 && h < 330) return "Pink";
   if (h >= 330 && h < 345) return "Rose";
 
+  // fallback
+  if (vPct <= 30) return "Black";
   return "Gray";
 }
 
-/**
- * Classify an image by palette-weighted voting over all palette colors.
- *
- * Each palette color is classified individually, then the category
- * that appears most frequently wins.  If the palette is empty, falls
- * back to classifying `dominantHex`.
- */
-export function classifyPalette(
-  palette: string[],
-  dominantHex: string
-): string {
-  if (palette.length === 0) return classifyHex(dominantHex);
+// ─── Full image analysis ────────────────────────────────────
 
-  const votes = new Map<string, number>();
-  for (const color of palette) {
-    const cat = classifyHex(color);
-    votes.set(cat, (votes.get(cat) || 0) + 1);
+export interface ImageAnalysis {
+  dominant_hex: string;
+  dominant_name: string;
+  clusters: ColorCluster[];
+  color_tags: string[];
+}
+
+/**
+ * Analyze an image: K‑means clustering → percentage → classification.
+ */
+export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
+  const pixels = await loadImagePixels(dataUrl);
+  const centroids = kMeans(pixels, 8, 8);
+  const total = centroids.reduce((s, c) => s + c.count, 0);
+
+  if (total === 0) {
+    return {
+      dominant_hex: "#999999",
+      dominant_name: "Gray",
+      clusters: [],
+      color_tags: [],
+    };
   }
 
-  // Also include the dominant color with extra weight
-  const domCat = classifyHex(dominantHex);
-  votes.set(domCat, (votes.get(domCat) || 0) + 2);
+  const clusters: ColorCluster[] = centroids.map((c) => {
+    const hex = rgbToHex(Math.round(c.r), Math.round(c.g), Math.round(c.b));
+    return { hex, name: classifyHex(hex), percentage: c.count / total };
+  });
 
-  let best = "Gray";
-  let bestCount = 0;
-  for (const [cat, count] of votes) {
-    if (count > bestCount || (count === bestCount && cat === domCat)) {
-      best = cat;
-      bestCount = count;
+  const dominant = clusters[0];
+
+  // Color tags: any cluster ≥ 15 % gets included
+  const tagSet = new Set<string>();
+  for (const cl of clusters) {
+    if (cl.percentage >= 0.15) tagSet.add(cl.name);
+  }
+
+  // If nothing met the threshold, take top 2
+  if (tagSet.size === 0) {
+    for (let i = 0; i < Math.min(2, clusters.length); i++) {
+      tagSet.add(clusters[i].name);
     }
   }
 
-  return best;
+  // Always include the dominant cluster's category
+  tagSet.add(dominant.name);
+
+  return {
+    dominant_hex: dominant.hex,
+    dominant_name: dominant.name,
+    clusters,
+    color_tags: Array.from(tagSet),
+  };
+}
+
+/**
+ * Re‑analyse every image currently in localStorage and persist updates.
+ */
+export async function reanalyzeAllImages(): Promise<number> {
+  const { loadImages, saveImages } = await import("./types");
+  const images: ImageData[] = loadImages();
+  let updated = 0;
+
+  for (const img of images) {
+    if (!img.image_url) continue;
+    try {
+      const result = await analyzeImage(img.image_url);
+      img.color_hex = result.dominant_hex;
+      img.color_name = result.dominant_name;
+      (img as any).dominant_colors = result.clusters;
+      (img as any).color_tags = result.color_tags;
+      img.palette = result.clusters.map((c) => c.hex);
+      updated++;
+    } catch (e) {
+      console.warn(`[reanalyze] skip ${img.id}:`, e);
+    }
+  }
+
+  saveImages(images);
+  return updated;
+}
+
+// ─── Deprecated wrappers (kept for import compatibility) ────
+
+export async function extractDominantColor(dataUrl: string): Promise<string> {
+  const r = await analyzeImage(dataUrl);
+  return r.dominant_hex;
+}
+
+export async function extractPalette(
+  dataUrl: string
+): Promise<string[]> {
+  const r = await analyzeImage(dataUrl);
+  return r.clusters.map((c) => c.hex);
+}
+
+export function classifyPalette(_palette: string[], _dominantHex: string): string {
+  // Deprecated — keep for old import sites; no longer used in new flow
+  return classifyHex(_dominantHex);
 }

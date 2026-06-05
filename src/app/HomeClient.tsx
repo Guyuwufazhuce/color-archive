@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ImageData } from "@/lib/types";
 import { loadImages, saveImages } from "@/lib/types";
-import { extractDominantColor, extractPalette, classifyPalette } from "@/lib/colorAnalysis";
+import { analyzeImage } from "@/lib/colorAnalysis";
 import RainbowBridge from "@/components/PendulumBounce";
 
 type Status = "Processing" | "Done ✅" | "Error ❌" | null;
@@ -69,21 +69,22 @@ export default function HomeClient() {
         });
 
         const compressedSrc = await compressImage(rawDataUrl, file);
-        const color_hex = await extractDominantColor(compressedSrc);
-        const palette = await extractPalette(compressedSrc, 5);
-        const color_name = classifyPalette(palette, color_hex);
+        const analysis = await analyzeImage(compressedSrc);
 
-        console.log(`[color] ${file.name}: hex=${color_hex} name=${color_name}`);
-        console.log(`[color] ${file.name}: palette=[${palette.join(", ")}]`);
+        console.log(`[color] ${file.name}: hex=${analysis.dominant_hex} name=${analysis.dominant_name}`);
+        console.log(`[color] ${file.name}: tags=[${analysis.color_tags.join(", ")}]`);
+        console.log(`[color] ${file.name}: clusters=[${analysis.clusters.map((c) => `${c.hex}(${(c.percentage * 100).toFixed(0)}%)`).join(", ")}]`);
 
         return {
           id: crypto.randomUUID(),
           name: file.name,
           image_url: compressedSrc,
           storage_path: null,
-          color_hex,
-          color_name,
-          palette,
+          color_hex: analysis.dominant_hex,
+          color_name: analysis.dominant_name,
+          palette: analysis.clusters.map((c) => c.hex),
+          dominant_colors: analysis.clusters,
+          color_tags: analysis.color_tags,
           created_at: Date.now(),
         } satisfies ImageData;
       });

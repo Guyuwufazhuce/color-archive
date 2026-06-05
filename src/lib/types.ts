@@ -1,6 +1,15 @@
+// ─── Color Cluster (shared type) ───────────────────────────
+
+/** A single extracted color cluster with hex, category name, and percentage. */
+export interface ColorCluster {
+  hex: string;
+  name: string;
+  percentage: number;
+}
+
 // ─── Unified Data Model ──────────────────────────────────────
 // Canonical fields: id, name, image_url, storage_path, color_hex,
-//                    color_name, palette, created_at
+//                    color_name, palette, dominant_colors, color_tags, created_at
 
 export interface ImageData {
   id: string;
@@ -10,6 +19,8 @@ export interface ImageData {
   color_hex: string;
   color_name: string;
   palette: string[];
+  dominant_colors: ColorCluster[];
+  color_tags: string[];
   created_at: number;
 }
 
@@ -29,15 +40,49 @@ function normalizeOne(raw: Record<string, unknown>): ImageData {
   if (Array.isArray(raw.palette)) palette = raw.palette;
   else if (Array.isArray(raw.Palette)) palette = raw.Palette;
 
+  // Try to restore dominant_colors from palette + dominant hex
+  let dominantColors: ColorCluster[] = [];
+  const storedDC = raw.dominant_colors ?? (raw as any).dominantColors;
+  if (Array.isArray(storedDC)) {
+    dominantColors = storedDC as ColorCluster[];
+  } else if (palette.length > 0) {
+    // Infer: each palette color gets equal share if no percentage data
+    const share = 1 / palette.length;
+    dominantColors = palette.map((hex) => ({
+      hex,
+      name: hex === "#000000" ? "Black" : hex === "#ffffff" ? "White" : String(hex),
+      percentage: share,
+    }));
+  }
+
+  // color_tags: stored or infer from color_name / category
+  let colorTags: string[] = [];
+  const storedCT = raw.color_tags ?? (raw as any).colorTags;
+  if (Array.isArray(storedCT)) {
+    colorTags = storedCT.map(String);
+  } else {
+    const name =
+      String(raw.color_name ?? raw.category ?? raw.Category ?? "Gray");
+    colorTags = [name];
+  }
+
   return {
     id,
     name,
     image_url,
     storage_path: raw.storage_path ? String(raw.storage_path) : null,
-    color_hex: String(raw.color_hex ?? raw.dominantColor ?? raw.DominantColor ?? "#999999"),
-    color_name: String(raw.color_name ?? raw.category ?? raw.Category ?? "Gray"),
+    color_hex: String(
+      raw.color_hex ?? raw.dominantColor ?? raw.DominantColor ?? "#999999"
+    ),
+    color_name: String(
+      raw.color_name ?? raw.category ?? raw.Category ?? "Gray"
+    ),
     palette,
-    created_at: Number(raw.created_at ?? raw.createdAt ?? raw.CreatedAt ?? Date.now()),
+    dominant_colors: dominantColors,
+    color_tags: colorTags,
+    created_at: Number(
+      raw.created_at ?? raw.createdAt ?? raw.CreatedAt ?? Date.now()
+    ),
   };
 }
 
