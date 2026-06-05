@@ -29,16 +29,7 @@ export default function AdsPlaceholder({
   }, []);
 
   if (!PUBLISHER_ID) {
-    return (
-      <div
-        className={`flex items-center justify-center bg-gray-50 border border-dashed border-gray-200 rounded-lg ${className}`}
-        style={{ minHeight: format === "leaderboard" ? 90 : format === "banner" ? 60 : 60 }}
-      >
-        <span className="text-[10px] text-gray-300 uppercase tracking-wider">
-          Ad Space
-        </span>
-      </div>
-    );
+    return null;
   }
 
   return (
