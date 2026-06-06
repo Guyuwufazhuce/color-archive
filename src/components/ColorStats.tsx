@@ -61,7 +61,6 @@ export default function ColorStats() {
             alignItems: "flex-end",
             justifyContent: "center",
             gap: GAP,
-            borderBottom: "1px solid #e5e7eb",
             minWidth: "max-content",
           }}
         >
