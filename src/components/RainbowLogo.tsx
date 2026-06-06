@@ -1,18 +1,11 @@
-// ─── Rainbow arch logo (4 arcs, thick strokes, reference-match colors) ──
+// ─── Rainbow "C" logo — 4 concentric arcs forming a letter C ──
+// C opens to the right, 7-color gradient left→right
 
-function arcPath(r: number): string {
-  const cx = 120;
-  const cy = 115;
-  return `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`;
-}
-
-const ARCS = [90, 76, 62, 48];
-
-const VIEW_W = 240;
-const VIEW_H = 130;
+const VIEW_W = 100;
+const VIEW_H = 100;
 
 export default function RainbowLogo() {
-  const h = 28;
+  const h = 30;
   const w = Math.round((VIEW_W / VIEW_H) * h);
 
   return (
@@ -25,7 +18,7 @@ export default function RainbowLogo() {
       aria-label="Color Archive"
     >
       <defs>
-        <linearGradient id="logoGrad" x1="0" x2="1" y1="0" y2="0">
+        <linearGradient id="cGrad" x1="0" x2="1" y1="0" y2="0">
           <stop offset="0%" stopColor="#ff5a4a" />
           <stop offset="15%" stopColor="#ff9f1a" />
           <stop offset="30%" stopColor="#ffd60a" />
@@ -36,16 +29,35 @@ export default function RainbowLogo() {
         </linearGradient>
       </defs>
 
-      {ARCS.map((r) => (
-        <path
-          key={r}
-          d={arcPath(r)}
-          fill="none"
-          stroke="url(#logoGrad)"
-          strokeWidth={14}
-          strokeLinecap="round"
-        />
-      ))}
+      {/* 4 concentric C-shaped arcs, opening to the right */}
+      <path
+        d="M 50 8 A 42 42 0 0 0 50 92"
+        fill="none"
+        stroke="url(#cGrad)"
+        strokeWidth={6}
+        strokeLinecap="round"
+      />
+      <path
+        d="M 50 14 A 36 36 0 0 0 50 86"
+        fill="none"
+        stroke="url(#cGrad)"
+        strokeWidth={6}
+        strokeLinecap="round"
+      />
+      <path
+        d="M 50 20 A 30 30 0 0 0 50 80"
+        fill="none"
+        stroke="url(#cGrad)"
+        strokeWidth={6}
+        strokeLinecap="round"
+      />
+      <path
+        d="M 50 26 A 24 24 0 0 0 50 74"
+        fill="none"
+        stroke="url(#cGrad)"
+        strokeWidth={6}
+        strokeLinecap="round"
+      />
     </svg>
   );
 }
