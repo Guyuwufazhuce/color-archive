@@ -272,7 +272,7 @@ function enrichClusters(clusters: ColorCluster[]): EnrichedCluster[] {
 // 7. Nature scenes → prefer Green/Lime/Cyan/Blue over White/Gray
 
 const NATURE_PRIMARY = new Set(["Green", "Lime", "Cyan", "Blue", "Teal", "Indigo"]);
-const DETAIL_COLORS = new Set(["Yellow", "Orange", "Brown", "Amber"]);
+const DETAIL_COLORS = new Set(["Yellow", "Orange", "Brown", "Amber", "Pink", "Rose"]);
 const NEUTRALS = new Set(["White", "Gray", "Black"]);
 
 function assignColorTags(mergedClusters: ColorCluster[]): string[] {
@@ -283,17 +283,14 @@ function assignColorTags(mergedClusters: ColorCluster[]): string[] {
     (c) => NATURE_PRIMARY.has(c.name) && c.percentage >= 0.06
   );
 
-  const tags: string[] = [];
+  // ── Step 1: Score each cluster, filtering out weak candidates ──
+  const scoredCandidates: { name: string; score: number }[] = [];
 
   for (const cl of enriched) {
     // ── 1. Gate: skip low-saturation, high-value colors ──
-    // These are almost always backgrounds (sky, white walls, overexposed areas, reflections)
-    // "低饱和浅色" = (s < 0.12, v > 0.6) → likely light background
-    // "反光灰" = (s < 0.10, v > 0.4) → gray reflections
+    // Light desaturated wash → background/sky/reflection
     if (cl.name !== "Black") {
-      // Light desaturated wash → background/sky/reflection
       if (cl.v > 0.6 && cl.s < 0.12) continue;
-      // Any extreme desaturated color → reflection/overlay
       if (cl.s < 0.08) continue;
     }
 
@@ -301,60 +298,85 @@ function assignColorTags(mergedClusters: ColorCluster[]): string[] {
     if (!NEUTRALS.has(cl.name) && cl.s < 0.12) continue;
 
     // ── 3. Neutral colors (White/Gray/Black) ──
-    // Only tag when they clearly constitute the theme
     if (NEUTRALS.has(cl.name)) {
       if (hasNatureColor) {
-        // Nature scene: suppress neutrals unless they dominate (>20%)
         if (cl.percentage < 0.20) continue;
       } else {
-        // Non-nature: neutrals need >12% area
         if (cl.percentage < 0.12) continue;
       }
-      // White/Gray also need minimum saturation to not be just blank space
       if (cl.name !== "Black" && cl.s < 0.05) continue;
     }
 
-    // ── 4. Detail colors (Yellow/Orange/Brown/Amber) ──
-    // Higher area threshold since they might be small accents
+    // ── 4. Detail/highlight colors (Yellow/Orange/Brown/Amber/Pink/Rose) ──
     if (DETAIL_COLORS.has(cl.name)) {
-      if (cl.percentage < 0.10) continue;
-      // Also check: if the image has a strong nature primary that's higher,
-      // these small warm accents are likely just details
       if (hasNatureColor) {
         const maxNature = Math.max(
           ...enriched
             .filter((c) => NATURE_PRIMARY.has(c.name))
-            .map((c) => c.percentage)
+            .map((c) => c.percentage),
+          0
         );
-        if (cl.percentage < maxNature * 0.5) continue;
+        // In nature scenes, small warm accents are almost always details
+        // Require ≥12% absolute AND ≥40% of the dominant nature color
+        if (cl.percentage < 0.12 || cl.percentage < maxNature * 0.4) continue;
+      } else {
+        // Non-nature: still needs significant area
+        if (cl.percentage < 0.12) continue;
       }
     }
 
-    // ── 5. General area threshold for chromatic colors ──
+    // ── 5. General area threshold for remaining chromatic colors ──
     if (!NEUTRALS.has(cl.name) && !DETAIL_COLORS.has(cl.name)) {
       if (cl.percentage < 0.05) continue;
     }
 
-    tags.push(cl.name);
+    scoredCandidates.push({ name: cl.name, score: cl.percentage });
   }
 
-  // ── 6. Deduplicate and limit to top 3 by percentage ──
-  const uniqueTags = [...new Set(tags)];
-  const scored = uniqueTags
-    .map((t) => {
-      const match = enriched.find((c) => c.name === t);
-      return { name: t, score: match?.percentage ?? 0 };
-    })
+  // ── 6. Deduplicate by name (keep highest score) ──
+  const deduped = new Map<string, number>();
+  for (const c of scoredCandidates) {
+    const existing = deduped.get(c.name);
+    if (!existing || c.score > existing) {
+      deduped.set(c.name, c.score);
+    }
+  }
+
+  // ── 7. Rank by score descending ──
+  const ranked = Array.from(deduped.entries())
+    .map(([name, score]) => ({ name, score }))
     .sort((a, b) => b.score - a.score);
 
-  const finalTags = scored.slice(0, 3).map((t) => t.name);
+  // ── 8. Max 2 tags, secondary must be significantly present ──
+  const final: string[] = [];
+
+  // Primary is always included
+  if (ranked.length > 0) {
+    final.push(ranked[0].name);
+  }
+
+  // Secondary: only if clearly an auxiliary main color
+  if (ranked.length > 1) {
+    const primaryScore = ranked[0].score;
+    const secondary = ranked[1];
+
+    const isDetail = DETAIL_COLORS.has(secondary.name);
+    const detailMultiplier = isDetail ? 0.5 : 0.35;
+
+    // Secondary must:
+    //  - Have ≥10% absolute area
+    //  - Be at least detailMultiplier (35%/50%) of primary's area
+    if (secondary.score >= 0.10 && secondary.score >= primaryScore * detailMultiplier) {
+      final.push(secondary.name);
+    }
+  }
 
   // Fallback: if nothing survived, use the dominant cluster
-  if (finalTags.length === 0 && mergedClusters.length > 0) {
+  if (final.length === 0 && mergedClusters.length > 0) {
     return [mergedClusters[0].name];
   }
 
-  return finalTags;
+  return final;
 }
 
 // ─── Full image analysis ────────────────────────────────────
