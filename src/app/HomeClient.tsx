@@ -163,7 +163,7 @@ export default function HomeClient() {
         }}
       />
 
-      {/* Color stats */}
+      {/* Color distribution — full-width bar chart */}
       <ColorStats />
     </div>
   );
