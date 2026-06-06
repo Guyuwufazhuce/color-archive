@@ -68,8 +68,9 @@ export default function GalleryClient() {
   const filteredImages = useMemo(() => {
     if (activeFilter === null) return [];
     return images.filter((img) => {
-      const tags = (img.color_tags ?? [img.color_name]).map((t) => String(t));
-      return tags.includes(activeFilter);
+      // Each image has exactly one primary color tag
+      const primaryColor = img.color_tags?.[0] ?? img.color_name;
+      return primaryColor === activeFilter;
     });
   }, [images, activeFilter]);
 
@@ -188,8 +189,9 @@ export default function GalleryClient() {
             {CATEGORIES.map((cat) => {
               const isActive = activeFilter === cat.name;
               const count = images.filter((img) => {
-                const tags = (img.color_tags ?? [img.color_name]).map((t) => String(t));
-                return tags.includes(cat.name);
+                // Each image has exactly one primary color tag
+                const primaryColor = img.color_tags?.[0] ?? img.color_name;
+                return primaryColor === cat.name;
               }).length;
               return (
                 <button

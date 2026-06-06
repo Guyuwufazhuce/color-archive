@@ -47,14 +47,11 @@ export default function ColorStats() {
       countsMap.set(cat.name, 0);
     }
 
-    // Count images per color category
+    // Count images per color category — each image belongs to exactly one color
     for (const img of images) {
-      const tags = (img.color_tags ?? [img.color_name]).map((t) => String(t));
-      // Mark all matching categories
-      for (const tag of tags) {
-        if (countsMap.has(tag)) {
-          countsMap.set(tag, (countsMap.get(tag) ?? 0) + 1);
-        }
+      const primaryColor = img.color_tags?.[0] ?? img.color_name;
+      if (countsMap.has(primaryColor)) {
+        countsMap.set(primaryColor, (countsMap.get(primaryColor) ?? 0) + 1);
       }
     }
 

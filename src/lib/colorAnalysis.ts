@@ -306,61 +306,16 @@ export function mergeClustersByCategory(clusters: ColorCluster[]): ColorCluster[
     .sort((a, b) => b.percentage - a.percentage);
 }
 
-// ─── Compute visual salience score ──────────────────────────
+// ─── Single dominant tag ───────────────────────────────────
 //
-// Score = percentage × (saturation^1.5)
-//
-// This boosts high-saturation colors (vivid red carpet) and
-// suppresses large pale areas (sand, reflections, sky haze).
-//
-// Saturation is clamped to [0.02, 1] to avoid extreme zeros.
-
-function visualSalience(
-  percentage: number,
-  saturation: number
-): number {
-  const sat = Math.max(0.02, Math.min(1, saturation));
-  return percentage * Math.pow(sat, 1.5);
-}
-
-// ─── Smart color tag assignment ─────────────────────────────
-//
-// 1. Compute visual salience for each merged cluster
-// 2. Take top 6 by area, then re-rank by salience
-// 3. Keep top 2–3 by salience with minimum threshold
-// 4. Always include at least the most salient color
-// 5. If White dominates area but a vivid color exists → include both
+// Each image gets exactly one color tag: the dominant category.
+// Dominant = highest percentage in merged clusters.
+// No multi-tag logic — one image, one classification.
 
 function assignColorTags(mergedClusters: ColorCluster[]): string[] {
-  if (mergedClusters.length === 0) return [];
-
-  // Compute salience for each
-  const scored = mergedClusters.map((c) => ({
-    name: c.name,
-    percentage: c.percentage,
-    saturation: hexSaturation(c.hex),
-    salience: visualSalience(c.percentage, hexSaturation(c.hex)),
-  }));
-
-  // Sort by salience descending
-  scored.sort((a, b) => b.salience - a.salience);
-
-  // Take the top cluster by salience always
-  const tags: string[] = [scored[0].name];
-
-  // Add additional clusters that meet criteria:
-  // - salience >= 0.02 (at least 2% effective area)
-  // - not already in tags
-  // - limit to total of 3 tags
-  for (let i = 1; i < scored.length && tags.length < 3; i++) {
-    const c = scored[i];
-    if (c.salience < 0.02) continue;
-    if (tags.includes(c.name)) continue;
-    tags.push(c.name);
-  }
-
-  // At most 3 tags
-  return tags.slice(0, 3);
+  if (mergedClusters.length === 0) return ["Gray"];
+  // Already sorted by percentage descending from mergeClustersByCategory
+  return [mergedClusters[0].name];
 }
 
 // ─── Full image analysis ────────────────────────────────────
@@ -406,14 +361,9 @@ export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
   // Step 2: merge by category name
   const mergedClusters = mergeClustersByCategory(rawClusters);
 
-  // Step 3: pick dominant by visual salience (not pure area)
-  const scoredDominants = mergedClusters.map((c) => ({
-    ...c,
-    salience: visualSalience(c.percentage, hexSaturation(c.hex)),
-  }));
-  scoredDominants.sort((a, b) => b.salience - a.salience);
-
-  const dominant = scoredDominants[0] ?? mergedClusters[0] ?? { hex: "#999999", name: "Gray" };
+  // Step 3: dominant = highest percentage, strictly by area
+  // mergedClusters is already sorted by percentage descending
+  const dominant = mergedClusters[0] ?? { hex: "#999999", name: "Gray" };
 
   // Step 4: assign smart color tags
   const color_tags = assignColorTags(mergedClusters);
