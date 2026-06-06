@@ -1,49 +1,86 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-
-interface BarData {
-  name: string;
-  value: number;
-  percent: string;
-  height: number;
-  color: string;
-  border?: string;
-}
-
-const FIXED_BARS: BarData[] = [
-  { name: "White",  value: 128, percent: "23%",  height: 220, color: "#f8fafc", border: "#e5e7eb" },
-  { name: "Black",  value: 94,  percent: "17%",  height: 180, color: "#111827" },
-  { name: "Green",  value: 73,  percent: "13%",  height: 145, color: "#22c55e" },
-  { name: "Blue",   value: 61,  percent: "11%",  height: 120, color: "#2196f3" },
-  { name: "Gray",   value: 45,  percent: "8%",   height: 90,  color: "#9ca3af" },
-  { name: "Red",    value: 38,  percent: "7%",   height: 80,  color: "#ff3b30" },
-  { name: "Yellow", value: 32,  percent: "6%",   height: 70,  color: "#ffd60a" },
-  { name: "Cyan",   value: 28,  percent: "5%",   height: 60,  color: "#67e8f9" },
-  { name: "Orange", value: 24,  percent: "4%",   height: 50,  color: "#ffa726" },
-  { name: "Purple", value: 18,  percent: "3%",   height: 40,  color: "#9333ea" },
-  { name: "Pink",   value: 14,  percent: "2.5%", height: 32,  color: "#ec6bcf" },
-  { name: "Brown",  value: 12,  percent: "2%",   height: 26,  color: "#b87333" },
-  { name: "Lime",   value: 9,   percent: "1.5%", height: 20,  color: "#a3e635" },
-  { name: "Indigo", value: 7,   percent: "1%",   height: 15,  color: "#6366f1" },
-  { name: "Rose",   value: 6,   percent: "0.5%", height: 10,  color: "#fb7185" },
-];
+import { fetchPhotos } from "@/lib/galleryService";
+import { recordToImageData } from "@/lib/galleryService";
+import { CATEGORIES } from "@/lib/colorCategories";
+import type { ImageData } from "@/lib/types";
 
 const BAR_W = 28;
 const GAP = 36;
+const MAX_BAR_H = 220; // tallest bar in px
+const ZERO_BAR_H = 2;  // thin line for 0-count colors
 
 export default function ColorStats() {
   const router = useRouter();
+  const [images, setImages] = useState<ImageData[]>([]);
+  const [loading, setLoading] = useState(true);
   const [anim, setAnim] = useState(false);
 
+  // Fetch real images on mount
+  useEffect(() => {
+    fetchPhotos()
+      .then((records) => {
+        setLoading(false);
+        setImages(records.map(recordToImageData));
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  // Trigger grow animation
   useEffect(() => {
     const t = setTimeout(() => setAnim(true), 80);
     return () => clearTimeout(t);
-  }, []);
+  }, [images]); // re-animate when data arrives
 
   const go = (name: string) =>
     router.push(`/gallery?color=${encodeURIComponent(name.toLowerCase())}`);
+
+  // ── Compute bar data from real images ──
+  const bars = useMemo(() => {
+    const total = images.length;
+    const countsMap = new Map<string, number>();
+
+    // Initialize all categories to 0
+    for (const cat of CATEGORIES) {
+      countsMap.set(cat.name, 0);
+    }
+
+    // Count images per color category
+    for (const img of images) {
+      const tags = (img.color_tags ?? [img.color_name]).map((t) => String(t));
+      // Mark all matching categories
+      for (const tag of tags) {
+        if (countsMap.has(tag)) {
+          countsMap.set(tag, (countsMap.get(tag) ?? 0) + 1);
+        }
+      }
+    }
+
+    let maxCount = 0;
+    const rawBars = CATEGORIES.map((cat) => {
+      const count = countsMap.get(cat.name) ?? 0;
+      if (count > maxCount) maxCount = count;
+      return { name: cat.name, color: cat.hex, count };
+    });
+
+    return rawBars.map((b) => {
+      const pct = total > 0 ? (b.count / total) * 100 : 0;
+      const pctLabel =
+        pct === 0
+          ? ""
+          : pct < 0.1
+            ? "<0.1%"
+            : `${pct.toFixed(pct >= 1 ? 0 : 1)}%`;
+      const height = b.count === 0 ? ZERO_BAR_H : Math.round((b.count / maxCount) * MAX_BAR_H);
+      return { ...b, height, pct, pctLabel };
+    });
+  }, [images]);
+
+  // Loading state — render nothing (flicker-free)
+  if (loading) return null;
+  if (images.length === 0) return null;
 
   return (
     <div style={{ maxWidth: 1200, width: "90vw", margin: "72px auto 0" }}>
@@ -64,7 +101,8 @@ export default function ColorStats() {
             minWidth: "max-content",
           }}
         >
-          {FIXED_BARS.map((b) => {
+          {bars.map((b) => {
+            const isZero = b.count === 0;
             const barH = anim ? b.height : 0;
             return (
               <div
@@ -78,68 +116,85 @@ export default function ColorStats() {
                   width: BAR_W,
                   cursor: "pointer",
                   position: "relative",
+                  opacity: isZero ? 0.4 : 1,
                 }}
                 className="group"
               >
-                {/* percentage — follows its bar, not a separate row */}
-                <div
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 700,
-                    color: "#374151",
-                    lineHeight: 1,
-                    marginBottom: 8,
-                    flexShrink: 0,
-                  }}
-                >
-                  {b.percent}
-                </div>
-
-                {/* bar — grows up from bottom */}
-                <div
-                  style={{
-                    width: "100%",
-                    height: barH,
-                    borderRadius: "10px 10px 0 0",
-                    backgroundColor: b.color,
-                    border: b.border ? `1px solid ${b.border}` : "none",
-                    transition: "height 900ms ease-out, transform 0.2s ease",
-                    flexShrink: 0,
-                  }}
-                  onMouseEnter={(e) => {
-                    (e.currentTarget as HTMLElement).style.transform =
-                      "translateY(-4px)";
-                  }}
-                  onMouseLeave={(e) => {
-                    (e.currentTarget as HTMLElement).style.transform =
-                      "translateY(0)";
-                  }}
-                />
-
-                {/* tooltip */}
-                <div
-                  style={{
-                    position: "absolute",
-                    bottom: "100%",
-                    marginBottom: 32,
-                    opacity: 0,
-                    pointerEvents: "none",
-                    transition: "opacity 0.15s",
-                    backgroundColor: "#111827",
-                    color: "#fff",
-                    fontSize: 12,
-                    borderRadius: 8,
-                    padding: "6px 12px",
-                    whiteSpace: "nowrap",
-                    zIndex: 10,
-                  }}
-                  className="group-hover:opacity-100"
-                >
-                  <div style={{ fontWeight: 500 }}>{b.name}</div>
-                  <div>
-                    {b.value} {b.value === 1 ? "photo" : "photos"}
+                {/* percentage — follows its bar */}
+                {b.pctLabel && (
+                  <div
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: "#374151",
+                      lineHeight: 1,
+                      marginBottom: 8,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {b.pctLabel}
                   </div>
-                </div>
+                )}
+
+                {/* bar or thin placeholder line */}
+                {isZero ? (
+                  <div
+                    style={{
+                      width: 12,
+                      height: 2,
+                      borderRadius: 0,
+                      backgroundColor: b.color,
+                      opacity: 0.3,
+                      flexShrink: 0,
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      width: "100%",
+                      height: barH,
+                      borderRadius: "10px 10px 0 0",
+                      backgroundColor: b.color,
+                      transition: "height 900ms ease-out, transform 0.2s ease",
+                      flexShrink: 0,
+                    }}
+                    onMouseEnter={(e) => {
+                      (e.currentTarget as HTMLElement).style.transform =
+                        "translateY(-4px)";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.transform =
+                        "translateY(0)";
+                    }}
+                  />
+                )}
+
+                {/* tooltip (only if count > 0) */}
+                {!isZero && (
+                  <div
+                    style={{
+                      position: "absolute",
+                      bottom: "100%",
+                      marginBottom: 32,
+                      opacity: 0,
+                      pointerEvents: "none",
+                      transition: "opacity 0.15s",
+                      backgroundColor: "#111827",
+                      color: "#fff",
+                      fontSize: 12,
+                      borderRadius: 8,
+                      padding: "6px 12px",
+                      whiteSpace: "nowrap",
+                      zIndex: 10,
+                    }}
+                    className="group-hover:opacity-100"
+                  >
+                    <div style={{ fontWeight: 500 }}>{b.name}</div>
+                    <div>
+                      {b.count} {b.count === 1 ? "photo" : "photos"}
+                    </div>
+                  </div>
+                )}
 
                 {/* label — name */}
                 <div
@@ -147,7 +202,7 @@ export default function ColorStats() {
                     fontSize: 13,
                     fontWeight: 600,
                     color: "#374151",
-                    marginTop: 14,
+                    marginTop: isZero ? 16 : 14,
                     lineHeight: 1.2,
                     flexShrink: 0,
                   }}
@@ -165,7 +220,7 @@ export default function ColorStats() {
                     flexShrink: 0,
                   }}
                 >
-                  {b.value}
+                  {b.count}
                 </div>
               </div>
             );
