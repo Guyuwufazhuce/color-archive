@@ -97,12 +97,14 @@ export default function HomeClient() {
         <h1
           className="text-4xl font-bold mb-3"
           style={{
+            fontWeight: 700,
             background:
-              "linear-gradient(90deg, #ff3b30, #ff9500, #ffcc00, #34c759, #30c7d7, #007aff, #af52de)",
+              "linear-gradient(90deg, #ff3b30 0%, #ff6b00 14%, #ffcc00 28%, #34c759 43%, #20c7c9 58%, #007aff 74%, #af52de 100%)",
             WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
             backgroundClip: "text",
+            WebkitTextFillColor: "transparent",
             color: "transparent",
+            display: "inline-block",
           }}
         >
           Color Archive
