@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import RainbowLogo from "./RainbowLogo";
 
 export default function Header() {
   const pathname = usePathname();
@@ -16,15 +17,10 @@ export default function Header() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-12 flex items-center justify-between">
         <Link
           href="/"
-          className="text-sm font-semibold tracking-tight hover:opacity-80 transition-opacity"
-          style={{
-            background:
-              "linear-gradient(90deg, #FF3B30, #FF9500, #FFD60A, #34C759, #00C7BE, #007AFF, #5856D6)",
-            WebkitBackgroundClip: "text",
-            WebkitTextFillColor: "transparent",
-          }}
+          className="flex items-center hover:opacity-80 transition-opacity"
+          aria-label="Home"
         >
-          Color Archive
+          <RainbowLogo />
         </Link>
 
         <nav className="flex items-center gap-6">

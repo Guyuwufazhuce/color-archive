@@ -94,8 +94,9 @@ export default function HomeClient() {
     <div className="min-h-[calc(100vh-8rem)] flex flex-col items-center justify-center px-4">
       {/* Title */}
       <div className="text-center mb-10">
-        <h1 className="text-4xl font-bold bg-gradient-to-r from-red-500 via-yellow-500 via-green-500 via-blue-500 to-purple-500 bg-clip-text text-transparent mb-3">
-          Color Archive
+        <h1 className="text-4xl font-bold mb-3">
+          <span style={{ color: "#FF9500" }}>Color</span>{" "}
+          <span style={{ color: "#00C7BE" }}>Archive</span>
         </h1>
         <p className="text-sm text-gray-400">
           Upload images, extract colors, build your palette library
