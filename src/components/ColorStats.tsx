@@ -3,127 +3,206 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-interface BarEntry {
+interface BarData {
   name: string;
-  hex: string;
+  value: number;
+  percent: string;
   height: number;
-  pct: number;
-  pctLabel: string;
-  count: number;
+  color: string;
+  border?: string;
 }
 
-// Fixed visual demo data — mirrors reference chart
-const FIXED_BARS: BarEntry[] = [
-  { name: "White",  hex: "#f8fafc",  height: 220, pct: 23,   pctLabel: "23%",  count: 128 },
-  { name: "Black",  hex: "#111827",  height: 180, pct: 17,   pctLabel: "17%",  count: 94 },
-  { name: "Green",  hex: "#22c55e",  height: 145, pct: 13,   pctLabel: "13%",  count: 73 },
-  { name: "Blue",   hex: "#2196f3",  height: 120, pct: 11,   pctLabel: "11%",  count: 61 },
-  { name: "Gray",   hex: "#9ca3af",  height: 90,  pct: 8,    pctLabel: "8%",   count: 45 },
-  { name: "Red",    hex: "#ff3b30",  height: 80,  pct: 7,    pctLabel: "7%",   count: 38 },
-  { name: "Yellow", hex: "#ffd60a",  height: 70,  pct: 6,    pctLabel: "6%",   count: 32 },
-  { name: "Cyan",   hex: "#67e8f9",  height: 60,  pct: 5,    pctLabel: "5%",   count: 28 },
-  { name: "Orange", hex: "#ffa726",  height: 50,  pct: 4,    pctLabel: "4%",   count: 24 },
-  { name: "Purple", hex: "#9333ea",  height: 40,  pct: 3,    pctLabel: "3%",   count: 18 },
-  { name: "Pink",   hex: "#ec6bcf",  height: 32,  pct: 2.5,  pctLabel: "2.5%", count: 14 },
-  { name: "Brown",  hex: "#b87333",  height: 26,  pct: 2,    pctLabel: "2%",   count: 12 },
-  { name: "Lime",   hex: "#a3e635",  height: 20,  pct: 1.5,  pctLabel: "1.5%", count: 9 },
-  { name: "Indigo", hex: "#6366f1",  height: 15,  pct: 1,    pctLabel: "1%",   count: 7 },
-  { name: "Rose",   hex: "#fb7185",  height: 10,  pct: 0.5,  pctLabel: "0.5%", count: 6 },
+const FIXED_BARS: BarData[] = [
+  { name: "White",  value: 128, percent: "23%",  height: 220, color: "#f8fafc", border: "#e5e7eb" },
+  { name: "Black",  value: 94,  percent: "17%",  height: 180, color: "#111827" },
+  { name: "Green",  value: 73,  percent: "13%",  height: 145, color: "#22c55e" },
+  { name: "Blue",   value: 61,  percent: "11%",  height: 120, color: "#2196f3" },
+  { name: "Gray",   value: 45,  percent: "8%",   height: 90,  color: "#9ca3af" },
+  { name: "Red",    value: 38,  percent: "7%",   height: 80,  color: "#ff3b30" },
+  { name: "Yellow", value: 32,  percent: "6%",   height: 70,  color: "#ffd60a" },
+  { name: "Cyan",   value: 28,  percent: "5%",   height: 60,  color: "#67e8f9" },
+  { name: "Orange", value: 24,  percent: "4%",   height: 50,  color: "#ffa726" },
+  { name: "Purple", value: 18,  percent: "3%",   height: 40,  color: "#9333ea" },
+  { name: "Pink",   value: 14,  percent: "2.5%", height: 32,  color: "#ec6bcf" },
+  { name: "Brown",  value: 12,  percent: "2%",   height: 26,  color: "#b87333" },
+  { name: "Lime",   value: 9,   percent: "1.5%", height: 20,  color: "#a3e635" },
+  { name: "Indigo", value: 7,   percent: "1%",   height: 15,  color: "#6366f1" },
+  { name: "Rose",   value: 6,   percent: "0.5%", height: 10,  color: "#fb7185" },
 ];
 
-const BAR_W = 54;
-const GAP = 32;
+const BAR_WIDTH = 28;
+const GAP = 36;
+const CONTAINER_HEIGHT = 260;
 
 export default function ColorStats() {
   const router = useRouter();
   const [animated, setAnimated] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => setAnimated(true), 80);
-    return () => clearTimeout(timer);
+    const t = setTimeout(() => setAnimated(true), 80);
+    return () => clearTimeout(t);
   }, []);
 
-  const goToColor = (name: string) => {
+  const goTo = (name: string) => {
     router.push(`/gallery?color=${encodeURIComponent(name.toLowerCase())}`);
   };
 
   return (
-    <div className="w-full mt-20">
-      <div className="max-w-[1280px] mx-auto px-6">
-        <div
-          className="overflow-x-auto pb-6"
-          style={{ scrollbarWidth: "thin", scrollbarColor: "#e5e7eb transparent" }}
-        >
-          <div className="flex flex-col items-center min-w-max mx-auto">
-            {/* ── Row 1: percentages ── */}
-            <div className="flex gap-[32px]">
-              {FIXED_BARS.map((bar) => (
+    <div
+      style={{
+        maxWidth: 1200,
+        width: "90vw",
+        margin: "72px auto 0",
+      }}
+    >
+      <div
+        style={{
+          overflowX: "auto",
+          paddingBottom: 24,
+          scrollbarWidth: "thin",
+          scrollbarColor: "#e5e7eb transparent",
+        }}
+      >
+        <div style={{ minWidth: "max-content", display: "flex", flexDirection: "column", alignItems: "center" }}>
+          {/* ── Row 1: percentages ── */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-end",
+              gap: GAP,
+            }}
+          >
+            {FIXED_BARS.map((bar) => (
+              <div
+                key={bar.name}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  width: BAR_WIDTH,
+                }}
+              >
                 <div
-                  key={bar.name}
-                  className="flex flex-col items-center"
-                  style={{ width: BAR_W }}
+                  style={{
+                    height: 18,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginBottom: 12,
+                  }}
                 >
-                  <div className="h-6 flex items-center justify-center mb-1.5">
-                    <span className="text-sm font-semibold text-gray-700 tabular-nums">
-                      {bar.pctLabel}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* ── Row 2: bars ── */}
-            <div className="relative flex gap-[32px]">
-              {FIXED_BARS.map((bar) => (
-                <div
-                  key={bar.name}
-                  className="relative flex flex-col items-center cursor-pointer group"
-                  onClick={() => goToColor(bar.name)}
-                  style={{ width: BAR_W }}
-                >
-                  {/* Bar — rectangular with 12px top radius */}
-                  <div
-                    className="transition-all duration-800 ease-out group-hover:-translate-y-1"
+                  <span
                     style={{
-                      width: "100%",
-                      height: animated ? `${bar.height}px` : "0px",
-                      borderRadius: "12px 12px 0 0",
-                      backgroundColor: bar.hex,
-                      border: bar.name === "White" ? "1px solid #e5e7eb" : "none",
-                      transition: "height 900ms ease-out, transform 0.2s ease",
+                      fontSize: 13,
+                      fontWeight: 700,
+                      color: "#374151",
                     }}
-                  />
-
-                  {/* Tooltip */}
-                  <div className="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none bg-gray-900 text-white text-xs rounded-lg px-3 py-1.5 whitespace-nowrap z-10 shadow-sm">
-                    <div className="font-medium">{bar.name}</div>
-                    <div>{bar.count} {bar.count === 1 ? "photo" : "photos"}</div>
-                  </div>
+                  >
+                    {bar.percent}
+                  </span>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
+          </div>
 
-            {/* ── Baseline ── */}
-            <div className="h-px bg-gray-200 w-full" />
-
-            {/* ── Row 3: labels ── */}
-            <div className="flex gap-[32px] mt-3">
-              {FIXED_BARS.map((bar) => (
+          {/* ── Row 2: bars container, align-items: flex-end ── */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-end",
+              justifyContent: "center",
+              gap: GAP,
+              height: CONTAINER_HEIGHT,
+              borderBottom: "1px solid #e5e7eb",
+            }}
+          >
+            {FIXED_BARS.map((bar) => (
+              <div
+                key={bar.name}
+                onClick={() => goTo(bar.name)}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  width: BAR_WIDTH,
+                  cursor: "pointer",
+                  position: "relative",
+                }}
+                className="group"
+              >
+                {/* Bar */}
                 <div
-                  key={bar.name}
-                  className="flex flex-col items-center cursor-pointer group"
-                  onClick={() => goToColor(bar.name)}
-                  style={{ width: BAR_W }}
+                  style={{
+                    width: "100%",
+                    height: animated ? bar.height : 0,
+                    borderRadius: "10px 10px 0 0",
+                    backgroundColor: bar.color,
+                    border: bar.border ? `1px solid ${bar.border}` : "none",
+                    transition: "height 900ms ease-out, transform 0.2s ease",
+                    transformOrigin: "bottom",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.target as HTMLElement).style.transform = "translateY(-4px)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.target as HTMLElement).style.transform = "translateY(0)";
+                  }}
+                />
+
+                {/* Tooltip */}
+                <div
+                  style={{
+                    position: "absolute",
+                    bottom: "100%",
+                    marginBottom: 8,
+                    opacity: 0,
+                    pointerEvents: "none",
+                    transition: "opacity 0.2s",
+                    backgroundColor: "#111827",
+                    color: "#fff",
+                    fontSize: 12,
+                    borderRadius: 8,
+                    padding: "6px 12px",
+                    whiteSpace: "nowrap",
+                    zIndex: 10,
+                  }}
+                  className="group-hover:opacity-100"
                 >
-                  <div className="text-sm font-medium text-gray-700 leading-tight">
-                    {bar.name}
-                  </div>
-                  <div className="mt-0.5 text-[13px] font-medium text-gray-500 leading-tight tabular-nums">
-                    {bar.count}
-                  </div>
+                  <div style={{ fontWeight: 500 }}>{bar.name}</div>
+                  <div>{bar.value} {bar.value === 1 ? "photo" : "photos"}</div>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
+          </div>
+
+          {/* ── Row 3: labels (name + count) ── */}
+          <div
+            style={{
+              display: "flex",
+              gap: GAP,
+              marginTop: 0,
+            }}
+          >
+            {FIXED_BARS.map((bar) => (
+              <div
+                key={bar.name}
+                onClick={() => goTo(bar.name)}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  width: BAR_WIDTH,
+                  cursor: "pointer",
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginTop: 14, lineHeight: 1.2 }}>
+                  {bar.name}
+                </div>
+                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6, lineHeight: 1.2 }}>
+                  {bar.value}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       </div>
