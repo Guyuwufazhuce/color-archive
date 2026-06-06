@@ -1,5 +1,5 @@
 // ─── Rainbow arch logo (4 arcs, thick strokes, reference-match colors)
-//     Subtle flowing gradient via SVG animate on stop offsets ──
+//     Color flow via native SVG gradientTransform animation ──
 
 function arcPath(r: number): string {
   const cx = 120;
@@ -11,21 +11,6 @@ const ARCS = [90, 76, 62, 48];
 
 const VIEW_W = 240;
 const VIEW_H = 130;
-
-/** Reusable animate element for gentle ease-in-out offset oscillation */
-function FlowAnimate(props: { values: string }) {
-  return (
-    <animate
-      attributeName="offset"
-      values={props.values}
-      keyTimes="0;0.5;1"
-      keySplines="0.42 0 0.58 1;0.42 0 0.58 1"
-      calcMode="spline"
-      dur="7s"
-      repeatCount="indefinite"
-    />
-  );
-}
 
 export default function RainbowLogo() {
   const h = 28;
@@ -43,27 +28,22 @@ export default function RainbowLogo() {
       >
         <defs>
           <linearGradient id="logoGrad" x1="0" x2="1" y1="0" y2="0">
-            <stop offset="0%" stopColor="#ff5a4a">
-              <FlowAnimate values="0%;14%;0%" />
-            </stop>
-            <stop offset="15%" stopColor="#ff9f1a">
-              <FlowAnimate values="15%;29%;15%" />
-            </stop>
-            <stop offset="30%" stopColor="#ffd60a">
-              <FlowAnimate values="30%;44%;30%" />
-            </stop>
-            <stop offset="50%" stopColor="#7bdc3c">
-              <FlowAnimate values="50%;64%;50%" />
-            </stop>
-            <stop offset="68%" stopColor="#2ed3c6">
-              <FlowAnimate values="68%;82%;68%" />
-            </stop>
-            <stop offset="84%" stopColor="#3b82f6">
-              <FlowAnimate values="84%;98%;84%" />
-            </stop>
-            <stop offset="100%" stopColor="#9b5de5">
-              <FlowAnimate values="100%;114%;100%" />
-            </stop>
+            <animateTransform
+              attributeName="gradientTransform"
+              type="translate"
+              values="-0.3,0;0.3,0;-0.3,0"
+              dur="4s"
+              repeatCount="indefinite"
+            />
+            <stop offset="0%" stopColor="#ff5a4a" />
+            <stop offset="12%" stopColor="#ff9f1a" />
+            <stop offset="24%" stopColor="#ffd60a" />
+            <stop offset="36%" stopColor="#7bdc3c" />
+            <stop offset="48%" stopColor="#2ed3c6" />
+            <stop offset="60%" stopColor="#3b82f6" />
+            <stop offset="72%" stopColor="#9b5de5" />
+            <stop offset="84%" stopColor="#ff5a4a" />
+            <stop offset="100%" stopColor="#ff9f1a" />
           </linearGradient>
         </defs>
 
