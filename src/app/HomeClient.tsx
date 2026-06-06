@@ -1,16 +1,17 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { analyzeImage } from "@/lib/colorAnalysis";
 import { uploadPhoto } from "@/lib/galleryService";
 import RainbowBridge from "@/components/PendulumBounce";
 
-type Status = "Processing" | "Done ✅" | "Error ❌" | null;
+type Status = "Processing" | "Error ❌" | null;
 
 export default function HomeClient() {
   const [status, setStatus] = useState<Status>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const router = useRouter();
 
   const handleFiles = useCallback(
     (files: FileList | null) => {
@@ -23,6 +24,8 @@ export default function HomeClient() {
       const validFiles = Array.from(files).filter((f) =>
         f.type.startsWith("image/")
       );
+
+      const analysisResults: { dominant_name: string; color_tags: string[] }[] = [];
 
       const jobs = validFiles.map(async (file) => {
         console.log(`[upload] Processing file: ${file.name}`);
@@ -42,6 +45,11 @@ export default function HomeClient() {
         console.log(`[color] ${file.name}: hex=${analysis.dominant_hex} name=${analysis.dominant_name}`);
         console.log(`[color] ${file.name}: tags=[${analysis.color_tags.join(", ")}]`);
 
+        analysisResults.push({
+          dominant_name: analysis.dominant_name,
+          color_tags: analysis.color_tags,
+        });
+
         // 2. Upload original file + analysis to Supabase
         const result = await uploadPhoto(file, {
           dominant_hex: analysis.dominant_hex,
@@ -60,7 +68,14 @@ export default function HomeClient() {
       Promise.all(jobs)
         .then(() => {
           console.log(`[upload] Successfully uploaded ${validFiles.length} image(s)`);
-          setStatus("Done ✅");
+          // Redirect to gallery with the last uploaded image's primary color
+          const last = analysisResults[analysisResults.length - 1];
+          const redirectColor = last?.color_tags?.[0] || last?.dominant_name;
+          if (redirectColor) {
+            router.push(`/gallery?color=${encodeURIComponent(redirectColor.toLowerCase())}`);
+          } else {
+            router.push("/gallery");
+          }
         })
         .catch((err) => {
           console.error("[upload] Error:", err);
@@ -68,7 +83,7 @@ export default function HomeClient() {
           setErrorMsg(err instanceof Error ? err.message : "Unknown error");
         });
     },
-    []
+    [router]
   );
 
   const triggerUpload = () => {
@@ -87,18 +102,10 @@ export default function HomeClient() {
         </p>
       </div>
 
-      {/* Status */}
-      {status && (
+      {/* Status - show only errors, success redirects */}
+      {status && status === "Error ❌" && (
         <div className="mb-6">
-          <span
-            className={`text-sm font-mono tracking-wide ${
-              status === "Error ❌"
-                ? "text-red-500"
-                : status === "Done ✅"
-                  ? "text-green-600"
-                  : "text-gray-400"
-            }`}
-          >
+          <span className="text-sm font-mono tracking-wide text-red-500">
             {status}
           </span>
         </div>
@@ -132,17 +139,7 @@ export default function HomeClient() {
         <p className="text-xs text-gray-400">PNG, JPEG, WEBP</p>
       </div>
 
-      {/* Link to gallery after upload */}
-      {status === "Done ✅" && (
-        <div className="mt-4">
-          <Link
-            href="/gallery"
-            className="inline-block px-5 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-colors"
-          >
-            View Gallery
-          </Link>
-        </div>
-      )}
+
 
       <input
         id="upload-input"

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import type { ImageData } from "@/lib/types";
 import { fetchPhotos, deletePhoto, recordToImageData } from "@/lib/galleryService";
 import { analyzeImage } from "@/lib/colorAnalysis";
@@ -52,6 +53,7 @@ export default function GalleryClient() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [reanalyzing, setReanalyzing] = useState(false);
   const [reanalyzeMsg, setReanalyzeMsg] = useState<string | null>(null);
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     setLoading(true);
@@ -60,6 +62,21 @@ export default function GalleryClient() {
         setImages(records.map(recordToImageData));
       })
       .finally(() => setLoading(false));
+  }, []);
+
+  // Read `?color=` query param on mount and auto-select that filter
+  useEffect(() => {
+    const colorParam = searchParams.get("color");
+    if (colorParam) {
+      const match = CATEGORIES.find(
+        (cat) => cat.name.toLowerCase() === colorParam.toLowerCase()
+      );
+      if (match) {
+        setActiveFilter(match.name);
+      }
+    }
+    // Only run once on mount; subsequent manual clicks override
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Reset visible count when filter changes
