@@ -1,50 +1,14 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { useRouter } from "next/navigation";
-import type { ImageData } from "@/lib/types";
-import { loadImages, saveImages } from "@/lib/types";
+import Link from "next/link";
 import { analyzeImage } from "@/lib/colorAnalysis";
+import { uploadPhoto } from "@/lib/galleryService";
 import RainbowBridge from "@/components/PendulumBounce";
 
 type Status = "Processing" | "Done ✅" | "Error ❌" | null;
 
-const MAX_DIMENSION = 1200;
-const JPEG_QUALITY = 0.8;
-
-function compressImage(src: string, file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      let { width, height } = img;
-      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
-        const ratio = Math.min(MAX_DIMENSION / width, MAX_DIMENSION / height);
-        width = Math.round(width * ratio);
-        height = Math.round(height * ratio);
-      }
-
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return reject(new Error("Canvas 2D context unavailable"));
-
-      ctx.drawImage(img, 0, 0, width, height);
-
-      const mime = file.type === "image/png" ? "image/png" : "image/jpeg";
-      const quality = mime === "image/png" ? undefined : JPEG_QUALITY;
-      const compressed = canvas.toDataURL(mime, quality);
-
-      console.log(`[compress] ${file.name}: ${img.width}x${img.height} → ${width}x${height} (${mime})`);
-      resolve(compressed);
-    };
-    img.onerror = () => reject(new Error(`Failed to load image: ${file.name}`));
-    img.src = src;
-  });
-}
-
 export default function HomeClient() {
-  const router = useRouter();
   const [status, setStatus] = useState<Status>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -56,11 +20,14 @@ export default function HomeClient() {
       setErrorMsg(null);
       console.log("[upload] Files selected:", files.length);
 
-      const validFiles = Array.from(files).filter((f) => f.type.startsWith("image/"));
+      const validFiles = Array.from(files).filter((f) =>
+        f.type.startsWith("image/")
+      );
 
       const jobs = validFiles.map(async (file) => {
-        console.log(`[upload] Reading file: ${file.name}`);
+        console.log(`[upload] Processing file: ${file.name}`);
 
+        // 1. Analyze color from local data URL
         const rawDataUrl = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result as string);
@@ -68,40 +35,32 @@ export default function HomeClient() {
           reader.readAsDataURL(file);
         });
 
+        // Compress for analysis (but upload original file to Storage)
         const compressedSrc = await compressImage(rawDataUrl, file);
         const analysis = await analyzeImage(compressedSrc);
 
         console.log(`[color] ${file.name}: hex=${analysis.dominant_hex} name=${analysis.dominant_name}`);
         console.log(`[color] ${file.name}: tags=[${analysis.color_tags.join(", ")}]`);
-        console.log(`[color] ${file.name}: clusters=[${analysis.clusters.map((c) => `${c.hex}(${(c.percentage * 100).toFixed(0)}%)`).join(", ")}]`);
 
-        return {
-          id: crypto.randomUUID(),
-          name: file.name,
-          image_url: compressedSrc,
-          storage_path: null,
-          color_hex: analysis.dominant_hex,
-          color_name: analysis.dominant_name,
-          palette: analysis.merged_clusters.map((c) => c.hex),
+        // 2. Upload original file + analysis to Supabase
+        const result = await uploadPhoto(file, {
+          dominant_hex: analysis.dominant_hex,
+          dominant_name: analysis.dominant_name,
           dominant_colors: analysis.merged_clusters,
           color_tags: analysis.color_tags,
-          created_at: Date.now(),
-        } satisfies ImageData;
+        });
+
+        if ("error" in result) {
+          throw new Error(result.error);
+        }
+
+        console.log(`[upload] Saved to Supabase: ${result.id} — ${result.image_url}`);
       });
 
       Promise.all(jobs)
-        .then((newImages) => {
-          const existing = loadImages();
-          const all = [...newImages, ...existing];
-          saveImages(all);
-
-          console.log(`[storage] Saved ${newImages.length} image(s), total ${all.length}`);
+        .then(() => {
+          console.log(`[upload] Successfully uploaded ${validFiles.length} image(s)`);
           setStatus("Done ✅");
-
-          setTimeout(() => {
-            console.log("[router] Navigating to /gallery");
-            router.push("/gallery");
-          }, 400);
         })
         .catch((err) => {
           console.error("[upload] Error:", err);
@@ -109,7 +68,7 @@ export default function HomeClient() {
           setErrorMsg(err instanceof Error ? err.message : "Unknown error");
         });
     },
-    [router]
+    []
   );
 
   const triggerUpload = () => {
@@ -173,6 +132,18 @@ export default function HomeClient() {
         <p className="text-xs text-gray-400">PNG, JPEG, WEBP</p>
       </div>
 
+      {/* Link to gallery after upload */}
+      {status === "Done ✅" && (
+        <div className="mt-4">
+          <Link
+            href="/gallery"
+            className="inline-block px-5 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-colors"
+          >
+            View Gallery
+          </Link>
+        </div>
+      )}
+
       <input
         id="upload-input"
         type="file"
@@ -191,4 +162,40 @@ export default function HomeClient() {
       </div>
     </div>
   );
+}
+
+// ─── Compress helper (moved from original) ──────────────────
+
+const MAX_DIMENSION = 1200;
+const JPEG_QUALITY = 0.8;
+
+function compressImage(src: string, file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        const ratio = Math.min(MAX_DIMENSION / width, MAX_DIMENSION / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return reject(new Error("Canvas 2D context unavailable"));
+
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const mime = file.type === "image/png" ? "image/png" : "image/jpeg";
+      const quality = mime === "image/png" ? undefined : JPEG_QUALITY;
+      const compressed = canvas.toDataURL(mime, quality);
+
+      console.log(`[compress] ${file.name}: ${img.width}x${img.height} → ${width}x${height} (${mime})`);
+      resolve(compressed);
+    };
+    img.onerror = () => reject(new Error(`Failed to load image: ${file.name}`));
+    img.src = src;
+  });
 }

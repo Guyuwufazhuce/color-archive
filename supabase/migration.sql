@@ -1,50 +1,50 @@
--- Migration SQL for color_archive
+-- Migration SQL for Color Archive
 -- Run this in Supabase SQL Editor
+-- Open: https://supabase.com/dashboard/project/vlsnkgggaelmfezhzrtp/sql/new
 
--- 1. Create photos table
-CREATE TABLE IF NOT EXISTS photos (
+-- 1. Drop old table (deletes ALL existing data — backup first if needed)
+DROP TABLE IF EXISTS photos CASCADE;
+
+-- 2. Create photos table with new schema
+CREATE TABLE photos (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  filename TEXT NOT NULL DEFAULT '',
   image_url TEXT NOT NULL,
-  thumbnail_url TEXT,
-  dominant_hex TEXT NOT NULL,
-  color_family TEXT NOT NULL CHECK (
-    color_family IN (
-      'red', 'orange', 'yellow', 'green', 'cyan',
-      'blue', 'purple', 'pink', 'brown', 'grayscale', 'uncategorized'
-    )
-  ),
-  width INTEGER NOT NULL DEFAULT 0,
-  height INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  storage_path TEXT NOT NULL DEFAULT '',
+  dominant_color TEXT NOT NULL DEFAULT '#cccccc',
+  dominant_colors JSONB NOT NULL DEFAULT '[]'::jsonb,
+  color_tags TEXT[] NOT NULL DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT now()
 );
 
--- 2. Indexes
-CREATE INDEX IF NOT EXISTS idx_photos_color_family ON photos (color_family);
-CREATE INDEX IF NOT EXISTS idx_photos_created_at ON photos (created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_photos_dominant_hex ON photos (dominant_hex);
+-- 3. Indexes
+CREATE INDEX idx_photos_created_at ON photos (created_at DESC);
+CREATE INDEX idx_photos_color_tags ON photos USING GIN (color_tags);
 
--- 3. Enable Row Level Security
+-- 4. Enable Row Level Security
 ALTER TABLE photos ENABLE ROW LEVEL SECURITY;
 
--- 4. Allow anonymous inserts
-CREATE POLICY "allow_anon_insert_photos"
-  ON photos FOR INSERT
-  TO anon
-  WITH CHECK (true);
-
--- 5. Allow anonymous selects
+-- 5. Allow anonymous SELECT
 CREATE POLICY "allow_anon_select_photos"
   ON photos FOR SELECT
   TO anon
   USING (true);
 
--- 6. Storage bucket for images
--- Run in Supabase Storage section:
--- Create a bucket named 'color-archive' (public)
+-- 6. Allow anonymous INSERT
+CREATE POLICY "allow_anon_insert_photos"
+  ON photos FOR INSERT
+  TO anon
+  WITH CHECK (true);
 
--- 7. Storage policy for anonymous uploads
--- In Supabase Storage → Policies for bucket 'color-archive':
--- Policy name: "allow_anon_upload"
--- Action: INSERT
--- Target roles: anon
--- Policy expression: true
+-- 7. Allow anonymous DELETE
+CREATE POLICY "allow_anon_delete_photos"
+  ON photos FOR DELETE
+  TO anon
+  USING (true);
+
+-- 8. Allow anonymous UPDATE
+CREATE POLICY "allow_anon_update_photos"
+  ON photos FOR UPDATE
+  TO anon
+  USING (true)
+  WITH CHECK (true);

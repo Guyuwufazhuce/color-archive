@@ -1,6 +1,6 @@
 // ─── Color Analysis — Cluster → Classify → Merge by Name ────────
 
-import type { ColorCluster, ImageData } from "./types";
+import type { ColorCluster } from "./types";
 
 // ─── Helpers ────────────────────────────────────────────────
 
@@ -245,38 +245,116 @@ export function mergeClustersByCategory(clusters: ColorCluster[]): ColorCluster[
     .sort((a, b) => b.percentage - a.percentage);
 }
 
-// ─── Color tag thresholds (applied AFTER merging) ──────────
-// Chromatic colors: percentage > 5% → tag
-// Black: percentage > 10% → tag
-// White: percentage > 8% → tag
-// Gray: percentage > 15% → tag
+// ─── Enriched cluster with HSV ──────────────────────────────
 
-const CHROMATIC_CATEGORIES = new Set([
-  "Red", "Orange", "Amber", "Yellow", "Lime", "Green", "Mint", "Cyan",
-  "Sky", "Blue", "Indigo", "Purple", "Pink", "Rose", "Brown",
-]);
+interface EnrichedCluster extends ColorCluster {
+  s: number;
+  v: number;
+}
+
+function enrichClusters(clusters: ColorCluster[]): EnrichedCluster[] {
+  return clusters.map((cl) => {
+    const { r, g, b } = parseHex(cl.hex);
+    const { s, v } = toHSV(r, g, b);
+    return { ...cl, s, v };
+  });
+}
+
+// ─── Smart color tag assignment ─────────────────────────────
+//
+// Rules:
+// 1. Colors must have sufficient area
+// 2. Colors must have sufficient saturation
+// 3. Colors must appear in the main subject area (≈ top clusters)
+// 4. White/Gray/Black only when clearly thematic
+// 5. Yellow/Orange/Brown → skip if just small details
+// 6. Max 2–3 tags per image
+// 7. Nature scenes → prefer Green/Lime/Cyan/Blue over White/Gray
+
+const NATURE_PRIMARY = new Set(["Green", "Lime", "Cyan", "Blue", "Teal", "Indigo"]);
+const DETAIL_COLORS = new Set(["Yellow", "Orange", "Brown", "Amber"]);
+const NEUTRALS = new Set(["White", "Gray", "Black"]);
 
 function assignColorTags(mergedClusters: ColorCluster[]): string[] {
+  const enriched = enrichClusters(mergedClusters);
+
+  // Detect if this is likely a nature / landscape / water scene
+  const hasNatureColor = enriched.some(
+    (c) => NATURE_PRIMARY.has(c.name) && c.percentage >= 0.06
+  );
+
   const tags: string[] = [];
 
-  for (const cl of mergedClusters) {
-    if (CHROMATIC_CATEGORIES.has(cl.name)) {
-      if (cl.percentage > 0.05) tags.push(cl.name);
-    } else if (cl.name === "Black") {
-      if (cl.percentage > 0.10) tags.push("Black");
-    } else if (cl.name === "White") {
-      if (cl.percentage > 0.08) tags.push("White");
-    } else if (cl.name === "Gray") {
-      if (cl.percentage > 0.15) tags.push("Gray");
+  for (const cl of enriched) {
+    // ── 1. Gate: skip low-saturation, high-value colors ──
+    // These are almost always backgrounds (sky, white walls, overexposed areas, reflections)
+    // "低饱和浅色" = (s < 0.12, v > 0.6) → likely light background
+    // "反光灰" = (s < 0.10, v > 0.4) → gray reflections
+    if (cl.name !== "Black") {
+      // Light desaturated wash → background/sky/reflection
+      if (cl.v > 0.6 && cl.s < 0.12) continue;
+      // Any extreme desaturated color → reflection/overlay
+      if (cl.s < 0.08) continue;
     }
+
+    // ── 2. Saturation floor for chromatic colors ──
+    if (!NEUTRALS.has(cl.name) && cl.s < 0.12) continue;
+
+    // ── 3. Neutral colors (White/Gray/Black) ──
+    // Only tag when they clearly constitute the theme
+    if (NEUTRALS.has(cl.name)) {
+      if (hasNatureColor) {
+        // Nature scene: suppress neutrals unless they dominate (>20%)
+        if (cl.percentage < 0.20) continue;
+      } else {
+        // Non-nature: neutrals need >12% area
+        if (cl.percentage < 0.12) continue;
+      }
+      // White/Gray also need minimum saturation to not be just blank space
+      if (cl.name !== "Black" && cl.s < 0.05) continue;
+    }
+
+    // ── 4. Detail colors (Yellow/Orange/Brown/Amber) ──
+    // Higher area threshold since they might be small accents
+    if (DETAIL_COLORS.has(cl.name)) {
+      if (cl.percentage < 0.10) continue;
+      // Also check: if the image has a strong nature primary that's higher,
+      // these small warm accents are likely just details
+      if (hasNatureColor) {
+        const maxNature = Math.max(
+          ...enriched
+            .filter((c) => NATURE_PRIMARY.has(c.name))
+            .map((c) => c.percentage)
+        );
+        if (cl.percentage < maxNature * 0.5) continue;
+      }
+    }
+
+    // ── 5. General area threshold for chromatic colors ──
+    if (!NEUTRALS.has(cl.name) && !DETAIL_COLORS.has(cl.name)) {
+      if (cl.percentage < 0.05) continue;
+    }
+
+    tags.push(cl.name);
   }
 
-  // Fallback: if nothing was tagged, tag the largest cluster
-  if (tags.length === 0 && mergedClusters.length > 0) {
-    tags.push(mergedClusters[0].name);
+  // ── 6. Deduplicate and limit to top 3 by percentage ──
+  const uniqueTags = [...new Set(tags)];
+  const scored = uniqueTags
+    .map((t) => {
+      const match = enriched.find((c) => c.name === t);
+      return { name: t, score: match?.percentage ?? 0 };
+    })
+    .sort((a, b) => b.score - a.score);
+
+  const finalTags = scored.slice(0, 3).map((t) => t.name);
+
+  // Fallback: if nothing survived, use the dominant cluster
+  if (finalTags.length === 0 && mergedClusters.length > 0) {
+    return [mergedClusters[0].name];
   }
 
-  return tags;
+  return finalTags;
 }
 
 // ─── Full image analysis ────────────────────────────────────
@@ -295,7 +373,7 @@ export interface ImageAnalysis {
  * 2. K-means clustering (K=12, 10 iterations)
  * 3. Classify each centroid by HSV → category name
  * 4. Merge clusters with same name → sum percentages
- * 5. Apply per-category threshold rules → color_tags
+ * 5. Apply smart color tag rules → color_tags
  */
 export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
   const pixels = await loadImagePixels(dataUrl);
@@ -321,7 +399,7 @@ export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
   // Step 2: merge by category name
   const mergedClusters = mergeClustersByCategory(rawClusters);
 
-  // Step 3: assign color tags from merged clusters
+  // Step 3: assign color tags using smart rules
   const color_tags = assignColorTags(mergedClusters);
 
   return {
@@ -333,34 +411,7 @@ export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
   };
 }
 
-/**
- * Re‑analyse every image currently in localStorage and persist updates.
- * Stores merged_clusters as dominant_colors for clean display.
- */
-export async function reanalyzeAllImages(): Promise<number> {
-  const { loadImages, saveImages } = await import("./types");
-  const images: ImageData[] = loadImages();
-  let updated = 0;
 
-  for (const img of images) {
-    if (!img.image_url) continue;
-    try {
-      const result = await analyzeImage(img.image_url);
-      img.color_hex = result.dominant_hex;
-      img.color_name = result.dominant_name;
-      // Store merged clusters (no duplicate names)
-      (img as any).dominant_colors = result.merged_clusters;
-      (img as any).color_tags = result.color_tags;
-      img.palette = result.merged_clusters.map((c) => c.hex);
-      updated++;
-    } catch (e) {
-      console.warn(`[reanalyze] skip ${img.id}:`, e);
-    }
-  }
-
-  saveImages(images);
-  return updated;
-}
 
 // ─── Deprecated wrappers (kept for import compatibility) ────
 

@@ -3,7 +3,9 @@
 import { useEffect, useState, useMemo, useCallback } from "react";
 import Link from "next/link";
 import type { ImageData } from "@/lib/types";
-import { loadImages, saveImages } from "@/lib/types";
+import { fetchPhotos, deletePhoto, recordToImageData } from "@/lib/galleryService";
+import { analyzeImage } from "@/lib/colorAnalysis";
+import { updatePhotoAnalysis } from "@/lib/galleryService";
 
 // ─── 18 Color Categories ────────────────────────────────────
 const CATEGORIES = [
@@ -44,6 +46,7 @@ function pageTitle(filter: ColorFilter): string {
 
 export default function GalleryClient() {
   const [images, setImages] = useState<ImageData[]>([]);
+  const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<ColorFilter>(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -51,7 +54,12 @@ export default function GalleryClient() {
   const [reanalyzeMsg, setReanalyzeMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    setImages(loadImages());
+    setLoading(true);
+    fetchPhotos()
+      .then((records) => {
+        setImages(records.map(recordToImageData));
+      })
+      .finally(() => setLoading(false));
   }, []);
 
   // Reset visible count when filter changes
@@ -60,7 +68,6 @@ export default function GalleryClient() {
   }, [activeFilter]);
 
   // Only show images when a color filter is active
-  // Uses color_tags array so images can appear under multiple categories
   const filteredImages = useMemo(() => {
     if (activeFilter === null) return [];
     return images.filter((img) => {
@@ -76,7 +83,7 @@ export default function GalleryClient() {
   const hasMore = visibleCount < filteredImages.length;
 
   const handleDelete = useCallback(
-    (e: React.MouseEvent, id: string) => {
+    async (e: React.MouseEvent, id: string, storagePath: string | null) => {
       e.preventDefault();
       e.stopPropagation();
 
@@ -84,17 +91,20 @@ export default function GalleryClient() {
 
       setDeleteError(null);
 
-      try {
-        const updated = images.filter((img) => img.id !== id);
-        saveImages(updated);
-        setImages(updated);
-      } catch (err) {
-        setDeleteError(
-          err instanceof Error ? err.message : "Failed to delete image"
-        );
+      const result = await deletePhoto(id, storagePath ?? "");
+      if (!result.ok) {
+        setDeleteError(result.storageError ?? "Failed to delete image");
+        return;
+      }
+
+      // Immediately update UI
+      setImages((prev) => prev.filter((img) => img.id !== id));
+
+      if (result.storageError) {
+        setDeleteError(result.storageError);
       }
     },
-    [images]
+    []
   );
 
   const handleLoadMore = useCallback(() => {
@@ -103,12 +113,32 @@ export default function GalleryClient() {
 
   const handleReanalyze = useCallback(async () => {
     setReanalyzing(true);
-    setReanalyzeMsg("Reanalyzing images…");
+    setReanalyzeMsg("Reanalyzing all images…");
     try {
-      const { reanalyzeAllImages } = await import("@/lib/colorAnalysis");
-      const count = await reanalyzeAllImages();
+      const records = await fetchPhotos();
+      let count = 0;
+
+      for (const record of records) {
+        if (!record.image_url) continue;
+        try {
+          const result = await analyzeImage(record.image_url);
+          const updateResult = await updatePhotoAnalysis(record.id, {
+            dominant_hex: result.dominant_hex,
+            dominant_name: result.dominant_name,
+            dominant_colors: result.merged_clusters,
+            color_tags: result.color_tags,
+          });
+          if (updateResult.ok) count++;
+        } catch (e) {
+          console.warn(`[reanalyze] skip ${record.id}:`, e);
+        }
+      }
+
       setReanalyzeMsg(`Done! ${count} images reanalyzed.`);
-      setImages(loadImages());
+
+      // Refresh images
+      const freshRecords = await fetchPhotos();
+      setImages(freshRecords.map(recordToImageData));
     } catch (err) {
       setReanalyzeMsg(
         err instanceof Error ? err.message : "Reanalysis failed"
@@ -119,7 +149,8 @@ export default function GalleryClient() {
     }
   }, []);
 
-  const isEmptyGallery = images.length === 0;
+  // Compute counts from all images (loading state handled separately)
+  const isEmptyGallery = images.length === 0 && !loading;
   const noColorSelected = activeFilter === null;
   const noMatch = activeFilter !== null && filteredImages.length === 0;
 
@@ -131,6 +162,13 @@ export default function GalleryClient() {
           {pageTitle(activeFilter)}
         </h1>
       </div>
+
+      {/* Loading */}
+      {loading && (
+        <div className="text-center py-24">
+          <p className="text-gray-300 text-sm">Loading gallery…</p>
+        </div>
+      )}
 
       {/* Reanalyze status toast */}
       {reanalyzeMsg && (
@@ -259,7 +297,7 @@ export default function GalleryClient() {
 
                   {/* Delete button — top-right, visible on hover */}
                   <button
-                    onClick={(e) => handleDelete(e, img.id)}
+                    onClick={(e) => handleDelete(e, img.id, img.storage_path)}
                     className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-white/80 backdrop-blur-sm text-gray-400 hover:text-red-500 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
                     title="Delete"
                   >

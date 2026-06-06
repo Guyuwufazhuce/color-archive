@@ -2,17 +2,27 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import type { ImageData } from "@/lib/types";
-import { loadImages } from "@/lib/types";
+import type { PhotoRecord } from "@/lib/types";
+import { fetchPhotoById } from "@/lib/galleryService";
 
 export default function PhotoDetailClient({ id }: { id: string }) {
-  const [photo, setPhoto] = useState<ImageData | null>(null);
+  const [photo, setPhoto] = useState<PhotoRecord | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const images = loadImages();
-    const found = images.find((img) => img.id === id) || null;
-    setPhoto(found);
+    setLoading(true);
+    fetchPhotoById(id)
+      .then((record) => setPhoto(record))
+      .finally(() => setLoading(false));
   }, [id]);
+
+  if (loading) {
+    return (
+      <div className="max-w-2xl mx-auto px-4 py-24 text-center">
+        <p className="text-gray-400 text-sm">Loading…</p>
+      </div>
+    );
+  }
 
   if (!photo) {
     return (
@@ -28,6 +38,8 @@ export default function PhotoDetailClient({ id }: { id: string }) {
     );
   }
 
+  const createdDate = new Date(photo.created_at);
+
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
       {/* Breadcrumb */}
@@ -37,7 +49,7 @@ export default function PhotoDetailClient({ id }: { id: string }) {
         </Link>
         <span>/</span>
         <span className="text-gray-600 truncate max-w-[160px]">
-          {photo.name}
+          {photo.filename}
         </span>
       </nav>
 
@@ -47,7 +59,7 @@ export default function PhotoDetailClient({ id }: { id: string }) {
           <div className="rounded-2xl overflow-hidden bg-gray-100 shadow-sm">
             <img
               src={photo.image_url}
-              alt={photo.name}
+              alt={photo.filename}
               className="w-full h-auto object-cover"
               onError={(e) => {
                 const target = e.currentTarget;
@@ -74,7 +86,7 @@ export default function PhotoDetailClient({ id }: { id: string }) {
                   Name
                 </div>
                 <div className="text-sm font-medium text-gray-900">
-                  {photo.name}
+                  {photo.filename}
                 </div>
               </div>
 
@@ -82,14 +94,14 @@ export default function PhotoDetailClient({ id }: { id: string }) {
               <div className="flex items-center gap-3">
                 <div
                   className="w-8 h-8 rounded-xl shadow-sm"
-                  style={{ backgroundColor: photo.color_hex }}
+                  style={{ backgroundColor: photo.dominant_color }}
                 />
                 <div>
                   <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-0.5">
                     Dominant Color
                   </div>
                   <div className="text-sm font-medium text-gray-900 font-mono">
-                    {photo.color_hex}
+                    {photo.dominant_color}
                   </div>
                 </div>
               </div>
@@ -100,7 +112,7 @@ export default function PhotoDetailClient({ id }: { id: string }) {
                   Color Tags
                 </div>
                 <div className="flex gap-1.5 flex-wrap">
-                  {(photo.color_tags ?? [photo.color_name]).map((tag, i) => (
+                  {(photo.color_tags ?? []).map((tag, i) => (
                     <span
                       key={i}
                       className="inline-block px-3 py-1 bg-gray-100 text-xs font-medium text-gray-700 rounded-full"
@@ -159,7 +171,7 @@ export default function PhotoDetailClient({ id }: { id: string }) {
                   Uploaded
                 </div>
                 <div className="text-sm font-medium text-gray-900">
-                  {new Date(photo.created_at).toLocaleDateString("en-US", {
+                  {createdDate.toLocaleDateString("en-US", {
                     year: "numeric",
                     month: "short",
                     day: "numeric",
@@ -174,7 +186,7 @@ export default function PhotoDetailClient({ id }: { id: string }) {
           {/* Download */}
           <a
             href={photo.image_url}
-            download={photo.name}
+            download={photo.filename}
             className="inline-flex items-center justify-center gap-2 w-full px-4 py-2.5 bg-gray-900 text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-colors"
           >
             <svg
