@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { analyzeImage } from "@/lib/colorAnalysis";
 import { uploadPhoto } from "@/lib/galleryService";
-import RainbowBridge from "@/components/PendulumBounce";
+import ColorStats from "@/components/ColorStats";
 
 type Status = "Processing" | "Error ❌" | null;
 
@@ -151,8 +151,6 @@ export default function HomeClient() {
         <p className="text-xs text-gray-400">PNG, JPEG, WEBP</p>
       </div>
 
-
-
       <input
         id="upload-input"
         type="file"
@@ -165,15 +163,13 @@ export default function HomeClient() {
         }}
       />
 
-      {/* Rainbow bridge animation */}
-      <div className="mt-12">
-        <RainbowBridge />
-      </div>
+      {/* Color stats */}
+      <ColorStats />
     </div>
   );
 }
 
-// ─── Compress helper (moved from original) ──────────────────
+// ─── Compress helper ────────────────────────────────────────
 
 const MAX_DIMENSION = 1200;
 const JPEG_QUALITY = 0.8;
