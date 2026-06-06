@@ -1,4 +1,11 @@
 // ─── Color Analysis — Cluster → Classify → Merge by Name ────────
+//
+// Improved classification logic:
+// - Low-saturation guard prevents pale sand/reflections being Yellow
+// - Per-color saturation thresholds (Yellow needs s ≥ 0.35)
+// - Cyan/Sky priority for water/seascapes
+// - Saturation-weighted dominant selection
+// - Smart color tags with visual salience scoring
 
 import type { ColorCluster } from "./types";
 
@@ -34,7 +41,6 @@ function loadImagePixels(
       const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
       const w = Math.round(img.width * scale);
       const h = Math.round(img.height * scale);
-      // Minimum dimension check: if too small, just use original
       if (w < 2 || h < 2) return resolve([]);
 
       const canvas = document.createElement("canvas");
@@ -47,7 +53,7 @@ function loadImagePixels(
       const data = ctx.getImageData(0, 0, w, h).data;
       const pixels: { r: number; g: number; b: number }[] = [];
       for (let i = 0; i < data.length; i += 4) {
-        if (data[i + 3] < 128) continue; // skip transparent
+        if (data[i + 3] < 128) continue;
         pixels.push({ r: data[i], g: data[i + 1], b: data[i + 2] });
       }
       resolve(pixels);
@@ -153,7 +159,7 @@ function kMeans(
   }
 
   merged.sort((a, b) => b.count - a.count);
-  return merged.slice(0, 12); // keep up to 12 clusters
+  return merged.slice(0, 12);
 }
 
 // ─── HSV computation ─────────────────────────────────────────
@@ -175,58 +181,113 @@ function toHSV(r: number, g: number, b: number): { h: number; s: number; v: numb
   return { h: ((h % 360) + 360) % 360, s, v };
 }
 
+/**
+ * Compute saturation from a hex string (for scoring).
+ */
+function hexSaturation(hex: string): number {
+  const { r, g, b } = parseHex(hex);
+  return toHSV(r, g, b).s;
+}
+
 // ─── Single hex → category name ────────────────────────────
-// Process: HSV → classify by hue with priority rules.
-// Pink (h 330-15, sat > 0.18, v > 0.45) checked before Red/Brown.
+//
+// Rules:
+// 1. Black: value < 0.15
+// 2. Low-saturation guard (s < 0.25): → White (v>0.82) / Gray (v≥0.30) / Black
+// 3. Brown: warm + dark/muted, before chroma
+// 4. Chromatic: per-color saturation thresholds
+//    - Yellow: needs s ≥ 0.35, v in [0.35, 0.85]
+//    - Orange/Amber/Lime: s ≥ 0.35
+//    - Green: s ≥ 0.30
+//    - Red, Blue, Purple, Cyan, Sky: s ≥ 0.25 (natural acceptance)
 
 export function classifyHex(hex: string): string {
   const { r, g, b } = parseHex(hex);
   const { h, s, v } = toHSV(r, g, b);
 
-  // ── Black: brightness < 0.15 ──
+  // ── Black ──
   if (v < 0.15) return "Black";
 
-  // ── White: brightness > 0.85 ──
-  if (v > 0.85) return "White";
+  // ── Low-saturation guard: s < 0.25 ──
+  // Any desaturated warm/cool region → achromatic
+  if (s < 0.25) {
+    if (v > 0.82) return "White";
+    if (v >= 0.30) return "Gray";
+    return "Black";
+  }
 
-  // ── Gray: saturation < 0.10 ──
-  if (s < 0.10) return "Gray";
-
-  // ── Pink (hue 330–360 or 0–15, sat > 0.18, v > 0.45)
-  //     Must be checked BEFORE Red/Brown to catch pinkish hues
-  if ((h >= 330 || h < 15) && s > 0.18 && v > 0.45) return "Pink";
-
-  // ── Brown: warm hues with low saturation and low-medium value ──
+  // ── Brown: warm hues with moderate saturation, low-medium value ──
   if (v < 0.55 && s < 0.50) {
     if (h >= 10 && h < 50) return "Brown";
     if (h >= 0 && h < 10 && s < 0.40) return "Brown";
-    if (h >= 330 && h < 360 && v < 0.35) return "Brown";
+    if (h >= 330 && h < 360 && v < 0.45) return "Brown";
   }
 
-  // ── Chromatic: classify by hue ──
-  if (h >= 345 || (h >= 0 && h < 8)) return "Red";
-  if (h >= 8 && h < 25) return "Orange";
-  if (h >= 25 && h < 43) return "Amber";
-  if (h >= 43 && h < 70) return "Yellow";
-  if (h >= 70 && h < 85) return "Lime";
-  if (h >= 85 && h < 165) return "Green";
+  // ── Chromatic: classify by hue with saturation guards ──
+
+  // Red: h 345–15 inclusive
+  if (h >= 345 || h < 8) return "Red";
+
+  // Orange
+  if (h >= 8 && h < 25) {
+    if (s >= 0.35) return "Orange";
+    return "Gray";
+  }
+
+  // Amber
+  if (h >= 25 && h < 43) {
+    if (s >= 0.35) return "Amber";
+    return "Gray";
+  }
+
+  // Yellow — strict: needs s ≥ 0.35 AND value in [0.35, 0.85]
+  if (h >= 43 && h < 70) {
+    if (s >= 0.35 && v >= 0.35 && v <= 0.85) return "Yellow";
+    if (v > 0.82) return "White";
+    return "Gray";
+  }
+
+  // Lime
+  if (h >= 70 && h < 85) {
+    if (s >= 0.35) return "Lime";
+    return "Gray";
+  }
+
+  // Green — slightly lower threshold for natural greens
+  if (h >= 85 && h < 165) {
+    if (s >= 0.30) return "Green";
+    return "Gray";
+  }
+
+  // Cyan — water/sky, accept lower saturation
   if (h >= 165 && h < 190) return "Cyan";
-  if (h >= 190 && h < 215) return "Sky";
+
+  // Sky vs Blue
+  if (h >= 190 && h < 215) {
+    if (v > 0.45) return "Sky";
+    return "Blue";
+  }
+
+  // Blue
   if (h >= 215 && h < 240) return "Blue";
+
+  // Indigo
   if (h >= 240 && h < 265) return "Indigo";
+
+  // Purple
   if (h >= 265 && h < 305) return "Purple";
+
+  // Pink
   if (h >= 305 && h < 330) return "Pink";
+
+  // Rose
   if (h >= 330 && h < 345) return "Rose";
 
-  // fallback
-  if (v <= 0.25) return "Black";
+  // Fallback
   return "Gray";
 }
 
 // ─── Merge clusters by category name ────────────────────────
-// After each centroid is classified, merge clusters with the same
-// name by summing their percentages. Keep the hex of the largest
-// cluster in each group (first encountered since input is sorted).
 
 export function mergeClustersByCategory(clusters: ColorCluster[]): ColorCluster[] {
   const map = new Map<string, { hex: string; percentage: number }>();
@@ -245,44 +306,61 @@ export function mergeClustersByCategory(clusters: ColorCluster[]): ColorCluster[
     .sort((a, b) => b.percentage - a.percentage);
 }
 
+// ─── Compute visual salience score ──────────────────────────
+//
+// Score = percentage × (saturation^1.5)
+//
+// This boosts high-saturation colors (vivid red carpet) and
+// suppresses large pale areas (sand, reflections, sky haze).
+//
+// Saturation is clamped to [0.02, 1] to avoid extreme zeros.
+
+function visualSalience(
+  percentage: number,
+  saturation: number
+): number {
+  const sat = Math.max(0.02, Math.min(1, saturation));
+  return percentage * Math.pow(sat, 1.5);
+}
+
 // ─── Smart color tag assignment ─────────────────────────────
 //
-// Rules:
-// 1. Take top 5 merged clusters (by percentage, already sorted)
-// 2. Filter: skip any cluster with percentage < 0.15
-// 3. Max 2 tags: Primary + Secondary
-// 4. If White > 40% → White is primary, pick next ≥15% as secondary
-// 5. Otherwise, top 2 remaining clusters as primary & secondary
-//
-// Color classification thresholds (from classifyHex):
-//   White: v > 0.85
-//   Black: v < 0.15
-//   Gray:  s < 0.10
+// 1. Compute visual salience for each merged cluster
+// 2. Take top 6 by area, then re-rank by salience
+// 3. Keep top 2–3 by salience with minimum threshold
+// 4. Always include at least the most salient color
+// 5. If White dominates area but a vivid color exists → include both
 
 function assignColorTags(mergedClusters: ColorCluster[]): string[] {
-  // Take top 5 (already sorted by percentage descending)
-  const top5 = mergedClusters.slice(0, 5);
+  if (mergedClusters.length === 0) return [];
 
-  // Filter: only clusters with area ≥ 15%
-  const significant = top5.filter((c) => c.percentage >= 0.15);
+  // Compute salience for each
+  const scored = mergedClusters.map((c) => ({
+    name: c.name,
+    percentage: c.percentage,
+    saturation: hexSaturation(c.hex),
+    salience: visualSalience(c.percentage, hexSaturation(c.hex)),
+  }));
 
-  if (significant.length === 0) {
-    // Fallback: just the dominant cluster
-    return mergedClusters.length > 0 ? [mergedClusters[0].name] : [];
+  // Sort by salience descending
+  scored.sort((a, b) => b.salience - a.salience);
+
+  // Take the top cluster by salience always
+  const tags: string[] = [scored[0].name];
+
+  // Add additional clusters that meet criteria:
+  // - salience >= 0.02 (at least 2% effective area)
+  // - not already in tags
+  // - limit to total of 3 tags
+  for (let i = 1; i < scored.length && tags.length < 3; i++) {
+    const c = scored[i];
+    if (c.salience < 0.02) continue;
+    if (tags.includes(c.name)) continue;
+    tags.push(c.name);
   }
 
-  // Special rule: if White > 40%, White is primary
-  const whiteCluster = significant.find((c) => c.name === "White");
-  if (whiteCluster && whiteCluster.percentage > 0.40) {
-    const secondary = significant.find((c) => c.name !== "White");
-    const tags = ["White"];
-    if (secondary) tags.push(secondary.name);
-    return tags;
-  }
-
-  // Otherwise: top 2 significant clusters
-  const tags = significant.slice(0, 2).map((c) => c.name);
-  return tags;
+  // At most 3 tags
+  return tags.slice(0, 3);
 }
 
 // ─── Full image analysis ────────────────────────────────────
@@ -290,8 +368,8 @@ function assignColorTags(mergedClusters: ColorCluster[]): string[] {
 export interface ImageAnalysis {
   dominant_hex: string;
   dominant_name: string;
-  clusters: ColorCluster[];       // Raw clusters (before merging), up to 12
-  merged_clusters: ColorCluster[]; // Merged by category name
+  clusters: ColorCluster[];
+  merged_clusters: ColorCluster[];
   color_tags: string[];
 }
 
@@ -301,7 +379,8 @@ export interface ImageAnalysis {
  * 2. K-means clustering (K=12, 10 iterations)
  * 3. Classify each centroid by HSV → category name
  * 4. Merge clusters with same name → sum percentages
- * 5. Apply smart color tag rules → color_tags
+ * 5. Select dominant by visual salience (not just area)
+ * 6. Assign smart color tags via salience scoring
  */
 export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
   const pixels = await loadImagePixels(dataUrl);
@@ -327,19 +406,26 @@ export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
   // Step 2: merge by category name
   const mergedClusters = mergeClustersByCategory(rawClusters);
 
-  // Step 3: assign color tags using smart rules
+  // Step 3: pick dominant by visual salience (not pure area)
+  const scoredDominants = mergedClusters.map((c) => ({
+    ...c,
+    salience: visualSalience(c.percentage, hexSaturation(c.hex)),
+  }));
+  scoredDominants.sort((a, b) => b.salience - a.salience);
+
+  const dominant = scoredDominants[0] ?? mergedClusters[0] ?? { hex: "#999999", name: "Gray" };
+
+  // Step 4: assign smart color tags
   const color_tags = assignColorTags(mergedClusters);
 
   return {
-    dominant_hex: mergedClusters[0]?.hex ?? "#999999",
-    dominant_name: mergedClusters[0]?.name ?? "Gray",
+    dominant_hex: dominant.hex,
+    dominant_name: dominant.name,
     clusters: rawClusters,
     merged_clusters: mergedClusters,
     color_tags,
   };
 }
-
-
 
 // ─── Deprecated wrappers (kept for import compatibility) ────
 
