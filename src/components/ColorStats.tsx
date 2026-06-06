@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { fetchPhotos, recordToImageData } from "@/lib/galleryService";
 import { CATEGORIES } from "@/lib/colorCategories";
 import type { ImageData } from "@/lib/types";
@@ -25,12 +25,12 @@ interface BarEntry {
   pctLabel: string;
 }
 
-// White needs an outline so it's visible on light bg
 function needsOutline(name: string) {
   return name === "White";
 }
 
 export default function ColorStats() {
+  const router = useRouter();
   const [counts, setCounts] = useState<Map<string, number> | null>(null);
   const [animated, setAnimated] = useState(false);
 
@@ -65,64 +65,94 @@ export default function ColorStats() {
 
   const maxCount = bars[0]?.count ?? 1;
   const MAX_HEIGHT = 220;
-  const MIN_HEIGHT = 12;
+  const MIN_HEIGHT = 8;
+
+  const goToColor = (name: string) => {
+    router.push(`/gallery?color=${encodeURIComponent(name.toLowerCase())}`);
+  };
 
   return (
     <div className="w-full py-20">
       <div className="max-w-[1200px] w-[90vw] mx-auto">
         <div
-          className="overflow-x-auto pb-4"
+          className="overflow-x-auto pb-6"
           style={{ scrollbarWidth: "thin", scrollbarColor: "#e5e7eb transparent" }}
         >
-          <div className="flex items-end justify-center min-w-max gap-[32px] mx-auto">
-            {bars.map((bar) => {
-              const ratio = bar.count / maxCount;
-              const height = Math.max(MIN_HEIGHT, ratio * MAX_HEIGHT);
-
-              return (
-                <Link
+          <div className="flex flex-col items-center min-w-max px-4 sm:px-0">
+            {/* ── Row 1: percentages ── */}
+            <div className="flex gap-[28px]">
+              {bars.map((bar) => (
+                <div
                   key={bar.name}
-                  href={`/gallery?color=${encodeURIComponent(bar.name.toLowerCase())}`}
-                  className="relative flex flex-col items-center no-underline group cursor-pointer"
+                  className="flex flex-col items-center"
+                  style={{ width: "48px" }}
                 >
-                  {/* Percentage */}
-                  <div className="h-[18px] flex items-center justify-center mb-[12px]">
-                    <span className="text-sm font-bold text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                  <div className="h-5 flex items-center justify-center mb-2">
+                    <span className="text-sm font-bold text-gray-700">
                       {bar.pctLabel}
                     </span>
                   </div>
+                </div>
+              ))}
+            </div>
 
-                  {/* Bar */}
+            {/* ── Row 2: bars ── */}
+            <div className="relative flex gap-[28px]">
+              {bars.map((bar) => {
+                const ratio = bar.count / maxCount;
+                const height = Math.max(MIN_HEIGHT, ratio * MAX_HEIGHT);
+
+                return (
                   <div
-                    className="cursor-pointer transition-all duration-300 ease-out group-hover:-translate-y-1"
-                    style={{
-                      width: "34px",
-                      height: animated ? `${height}px` : "0px",
-                      borderRadius: "999px",
-                      backgroundColor: bar.hex,
-                      border: needsOutline(bar.name) ? "1px solid #e5e7eb" : "none",
-                      transition: "height 900ms ease-out, transform 0.2s ease",
-                    }}
-                  />
+                    key={bar.name}
+                    className="relative flex flex-col items-center cursor-pointer group"
+                    onClick={() => goToColor(bar.name)}
+                    style={{ width: "48px" }}
+                  >
+                    {/* Bar */}
+                    <div
+                      className="transition-all duration-300 ease-out group-hover:-translate-y-1"
+                      style={{
+                        width: "100%",
+                        height: animated ? `${height}px` : "0px",
+                        borderRadius: "8px 8px 0 0",
+                        backgroundColor: bar.hex,
+                        border: needsOutline(bar.name) ? "1px solid #e5e7eb" : "none",
+                        transition: "height 800ms ease-out, transform 0.2s ease",
+                      }}
+                    />
 
-                  {/* Tooltip */}
-                  <div className="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none bg-gray-900 text-white text-xs rounded-lg px-3 py-1.5 whitespace-nowrap z-10 shadow-sm">
-                    <div className="font-medium">{bar.name}</div>
-                    <div>{bar.count} {bar.count === 1 ? "photo" : "photos"}</div>
-                  </div>
-
-                  {/* Label */}
-                  <div className="text-center pt-[16px]">
-                    <div className="text-sm font-semibold text-gray-700 leading-tight">
-                      {bar.name}
-                    </div>
-                    <div className="mt-[6px] text-[13px] font-medium text-gray-500 leading-tight tabular-nums">
-                      {bar.count}
+                    {/* Tooltip */}
+                    <div className="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none bg-gray-900 text-white text-xs rounded-lg px-3 py-1.5 whitespace-nowrap z-10 shadow-sm">
+                      <div className="font-medium">{bar.name}</div>
+                      <div>{bar.count} {bar.count === 1 ? "photo" : "photos"}</div>
                     </div>
                   </div>
-                </Link>
-              );
-            })}
+                );
+              })}
+            </div>
+
+            {/* ── Baseline — shared horizontal line ── */}
+            <div className="h-px bg-gray-200 w-full" />
+
+            {/* ── Row 3: labels (name + count) ── */}
+            <div className="flex gap-[28px] mt-3">
+              {bars.map((bar) => (
+                <div
+                  key={bar.name}
+                  className="flex flex-col items-center cursor-pointer group"
+                  onClick={() => goToColor(bar.name)}
+                  style={{ width: "48px" }}
+                >
+                  <div className="text-sm font-semibold text-gray-700 leading-tight">
+                    {bar.name}
+                  </div>
+                  <div className="mt-1 text-sm font-semibold text-gray-500 leading-tight tabular-nums">
+                    {bar.count}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
