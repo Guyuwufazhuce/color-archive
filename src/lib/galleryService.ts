@@ -14,6 +14,7 @@ export async function uploadPhoto(
     dominant_hex: string;
     dominant_name: string;
     dominant_colors: { hex: string; name: string; percentage: number }[];
+    visual_color: string;
     color_tags: string[];
   }
 ): Promise<{ id: string; image_url: string } | { error: string }> {
@@ -51,6 +52,7 @@ export async function uploadPhoto(
       storage_path: storagePath,
       dominant_color: analysis.dominant_hex,
       dominant_colors: analysis.dominant_colors,
+      visual_color: analysis.visual_color,
       color_tags: analysis.color_tags,
     })
     .select("id, image_url")
@@ -138,6 +140,7 @@ export async function updatePhotoAnalysis(
     dominant_hex: string;
     dominant_name: string;
     dominant_colors: { hex: string; name: string; percentage: number }[];
+    visual_color: string;
     color_tags: string[];
   }
 ): Promise<{ ok: boolean; error?: string }> {
@@ -146,6 +149,7 @@ export async function updatePhotoAnalysis(
     .update({
       dominant_color: analysis.dominant_hex,
       dominant_colors: analysis.dominant_colors,
+      visual_color: analysis.visual_color,
       color_tags: analysis.color_tags,
     })
     .eq("id", id);
@@ -166,9 +170,10 @@ export function recordToImageData(record: PhotoRecord): ImageData {
     image_url: record.image_url,
     storage_path: record.storage_path,
     color_hex: record.dominant_color,
-    color_name: record.color_tags?.[0] ?? "Gray",
+    color_name: record.visual_color ?? record.color_tags?.[0] ?? "Gray",
     palette: (record.dominant_colors ?? []).map((c) => c.hex),
     dominant_colors: record.dominant_colors ?? [],
+    visual_color: record.visual_color || "",
     color_tags: record.color_tags ?? [],
     created_at: new Date(record.created_at).getTime(),
   };

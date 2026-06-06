@@ -13,6 +13,7 @@ CREATE TABLE photos (
   storage_path TEXT NOT NULL DEFAULT '',
   dominant_color TEXT NOT NULL DEFAULT '#cccccc',
   dominant_colors JSONB NOT NULL DEFAULT '[]'::jsonb,
+  visual_color TEXT NOT NULL DEFAULT '',
   color_tags TEXT[] NOT NULL DEFAULT '{}',
   created_at TIMESTAMPTZ DEFAULT now()
 );
@@ -20,6 +21,7 @@ CREATE TABLE photos (
 -- 3. Indexes
 CREATE INDEX idx_photos_created_at ON photos (created_at DESC);
 CREATE INDEX idx_photos_color_tags ON photos USING GIN (color_tags);
+CREATE INDEX idx_photos_visual_color ON photos (visual_color);
 
 -- 4. Enable Row Level Security
 ALTER TABLE photos ENABLE ROW LEVEL SECURITY;

@@ -4,7 +4,6 @@ import { useCallback, useState } from "react";
 import { useRouter } from "next/navigation";
 import { analyzeImage } from "@/lib/colorAnalysis";
 import { uploadPhoto } from "@/lib/galleryService";
-import ColorStats from "@/components/ColorStats";
 
 type Status = "Processing" | "Error ❌" | null;
 
@@ -55,6 +54,7 @@ export default function HomeClient() {
           dominant_hex: analysis.dominant_hex,
           dominant_name: analysis.dominant_name,
           dominant_colors: analysis.merged_clusters,
+          visual_color: analysis.visual_color,
           color_tags: analysis.color_tags,
         });
 
@@ -163,8 +163,7 @@ export default function HomeClient() {
         }}
       />
 
-      {/* Color distribution — full-width bar chart */}
-      <ColorStats />
+
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { PhotoRecord } from "@/lib/types";
 import { fetchPhotoById } from "@/lib/galleryService";
+import { CATEGORIES } from "@/lib/colorCategories";
 
 export default function PhotoDetailClient({ id }: { id: string }) {
   const [photo, setPhoto] = useState<PhotoRecord | null>(null);
@@ -103,6 +104,37 @@ export default function PhotoDetailClient({ id }: { id: string }) {
                   <div className="text-sm font-medium text-gray-900 font-mono">
                     {photo.dominant_color}
                   </div>
+                </div>
+              </div>
+
+              {/* Visual Color (classification source of truth) */}
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1">
+                  Visual Color
+                </div>
+                <div className="flex gap-1.5 flex-wrap">
+                  <span
+                    className="inline-block px-3 py-1 text-xs font-medium text-gray-700 rounded-full"
+                    style={{
+                      backgroundColor: photo.visual_color
+                        ? undefined
+                        : "#f3f4f6",
+                    }}
+                  >
+                    <span className="flex items-center gap-1.5">
+                      {photo.visual_color && (
+                        <span
+                          className="w-2.5 h-2.5 rounded-full"
+                          style={{
+                            backgroundColor: CATEGORIES.find(
+                              (c) => c.name === photo.visual_color
+                            )?.hex ?? "#999",
+                          }}
+                        />
+                      )}
+                      {photo.visual_color || (photo.color_tags?.[0] ?? "Gray")}
+                    </span>
+                  </span>
                 </div>
               </div>
 

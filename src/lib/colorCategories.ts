@@ -1,5 +1,5 @@
 // ─── Shared 18 Color Categories ──────────────────────────────
-// Used by GalleryClient filter bar and HomeClient ColorStats.
+// Used by GalleryClient filter bar and GalleryClient color tags UI.
 
 export const CATEGORIES = [
   { name: "Red", hex: "#FF3B30" },

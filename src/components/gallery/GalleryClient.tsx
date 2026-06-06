@@ -31,17 +31,56 @@ export default function GalleryClient() {
   const [activeFilter, setActiveFilter] = useState<ColorFilter>(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [reanalyzing, setReanalyzing] = useState(false);
-  const [reanalyzeMsg, setReanalyzeMsg] = useState<string | null>(null);
+  const [autoAnalyzeMsg, setAutoAnalyzeMsg] = useState<string | null>(null);
   const searchParams = useSearchParams();
 
+  // ── Fetch photos; auto-analyze any that lack visual_color ──
   useEffect(() => {
     setLoading(true);
-    fetchPhotos()
-      .then((records) => {
+    let cancelled = false;
+
+    (async () => {
+      const records = await fetchPhotos();
+      if (cancelled) return;
+
+      // Only analyze images missing visual_color or with empty color_tags
+      const needAnalysis = records.filter((r) => !r.visual_color || !r.color_tags?.length);
+
+      if (needAnalysis.length > 0) {
+        setAutoAnalyzeMsg(`Analyzing colors for ${needAnalysis.length} image(s)…`);
+        let updated = 0;
+
+        for (const record of needAnalysis) {
+          if (!record.image_url) continue;
+          try {
+            const result = await analyzeImage(record.image_url);
+            const { ok } = await updatePhotoAnalysis(record.id, {
+              dominant_hex: result.dominant_hex,
+              dominant_name: result.dominant_name,
+              dominant_colors: result.merged_clusters,
+              visual_color: result.visual_color,
+              color_tags: result.color_tags,
+            });
+            if (ok) updated++;
+          } catch (e) {
+            console.warn(`[auto-analyze] skip ${record.id}:`, e);
+          }
+        }
+
+        if (!cancelled) {
+          const freshRecords = await fetchPhotos();
+          setImages(freshRecords.map(recordToImageData));
+          setAutoAnalyzeMsg(`✅ Analyzed ${updated} image(s)`);
+          setTimeout(() => setAutoAnalyzeMsg(null), 3000);
+        }
+      } else {
         setImages(records.map(recordToImageData));
-      })
-      .finally(() => setLoading(false));
+      }
+
+      setLoading(false);
+    })();
+
+    return () => { cancelled = true; };
   }, []);
 
   // Read `?color=` query param on mount and auto-select that filter
@@ -69,7 +108,7 @@ export default function GalleryClient() {
     if (activeFilter === null) return [];
     return images.filter((img) => {
       // Each image has exactly one primary color tag
-      const primaryColor = img.color_tags?.[0] ?? img.color_name;
+      const primaryColor = img.visual_color || img.color_tags?.[0] || img.color_name;
       return primaryColor === activeFilter;
     });
   }, [images, activeFilter]);
@@ -109,43 +148,7 @@ export default function GalleryClient() {
     setVisibleCount((prev) => prev + PAGE_SIZE);
   }, []);
 
-  const handleReanalyze = useCallback(async () => {
-    setReanalyzing(true);
-    setReanalyzeMsg("Reanalyzing all images…");
-    try {
-      const records = await fetchPhotos();
-      let count = 0;
 
-      for (const record of records) {
-        if (!record.image_url) continue;
-        try {
-          const result = await analyzeImage(record.image_url);
-          const updateResult = await updatePhotoAnalysis(record.id, {
-            dominant_hex: result.dominant_hex,
-            dominant_name: result.dominant_name,
-            dominant_colors: result.merged_clusters,
-            color_tags: result.color_tags,
-          });
-          if (updateResult.ok) count++;
-        } catch (e) {
-          console.warn(`[reanalyze] skip ${record.id}:`, e);
-        }
-      }
-
-      setReanalyzeMsg(`Done! ${count} images reanalyzed.`);
-
-      // Refresh images
-      const freshRecords = await fetchPhotos();
-      setImages(freshRecords.map(recordToImageData));
-    } catch (err) {
-      setReanalyzeMsg(
-        err instanceof Error ? err.message : "Reanalysis failed"
-      );
-    } finally {
-      setReanalyzing(false);
-      setTimeout(() => setReanalyzeMsg(null), 4000);
-    }
-  }, []);
 
   // Compute counts from all images (loading state handled separately)
   const isEmptyGallery = images.length === 0 && !loading;
@@ -168,10 +171,10 @@ export default function GalleryClient() {
         </div>
       )}
 
-      {/* Reanalyze status toast */}
-      {reanalyzeMsg && (
+      {/* Color analysis status toast */}
+      {autoAnalyzeMsg && (
         <div className="mb-4 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-600">
-          {reanalyzeMsg}
+          {autoAnalyzeMsg}
         </div>
       )}
 
@@ -190,7 +193,7 @@ export default function GalleryClient() {
               const isActive = activeFilter === cat.name;
               const count = images.filter((img) => {
                 // Each image has exactly one primary color tag
-                const primaryColor = img.color_tags?.[0] ?? img.color_name;
+                const primaryColor = img.visual_color || img.color_tags?.[0] || img.color_name;
                 return primaryColor === cat.name;
               }).length;
               return (
@@ -216,26 +219,6 @@ export default function GalleryClient() {
               );
             })}
           </div>
-          <button
-            onClick={handleReanalyze}
-            disabled={reanalyzing}
-            className="flex-shrink-0 flex items-center gap-1.5 h-9 px-4 rounded-full bg-[#f5f5f5] hover:bg-[#e9e9e9] disabled:opacity-50 disabled:cursor-not-allowed text-[#444] text-xs font-medium transition-colors"
-          >
-            <svg
-              className={`w-3.5 h-3.5 ${reanalyzing ? "animate-spin" : ""}`}
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polyline points="23 4 23 10 17 10" />
-              <polyline points="1 20 1 14 7 14" />
-              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
-            </svg>
-            {reanalyzing ? "Reanalyzing…" : "Reanalyze"}
-          </button>
         </div>
       )}
 
