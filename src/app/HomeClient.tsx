@@ -97,7 +97,7 @@ export default function HomeClient() {
         <h1 className="text-4xl font-bold mb-3">
           <span
             style={{
-              background: "linear-gradient(90deg, #FF9500, #34C759)",
+              background: "linear-gradient(90deg, #ff6a00, #ffb300)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
             }}
@@ -106,7 +106,7 @@ export default function HomeClient() {
           </span>{" "}
           <span
             style={{
-              background: "linear-gradient(90deg, #34C759, #00C7BE)",
+              background: "linear-gradient(90deg, #25c7b7, #3b82f6)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
             }}
