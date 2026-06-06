@@ -17,8 +17,16 @@ function countColorTags(images: ImageData[]): Map<string, number> {
   return counts;
 }
 
+interface BarEntry {
+  name: string;
+  hex: string;
+  count: number;
+  pct: number;
+}
+
 export default function ColorStats() {
   const [counts, setCounts] = useState<Map<string, number> | null>(null);
+  const [animated, setAnimated] = useState(false);
 
   useEffect(() => {
     fetchPhotos()
@@ -26,47 +34,92 @@ export default function ColorStats() {
         const images = records.map(recordToImageData);
         setCounts(countColorTags(images));
       });
+    const timer = setTimeout(() => setAnimated(true), 60);
+    return () => clearTimeout(timer);
   }, []);
 
-  // Only show categories that have at least one image tagged
-  const visible = counts
-    ? CATEGORIES.filter((cat) => (counts.get(cat.name) ?? 0) > 0)
-    : [];
+  if (!counts) return null;
 
-  if (!counts) return null; // no data yet — silent
+  const total = Array.from(counts.values()).reduce((s, v) => s + v, 0);
+  if (total === 0) return null;
+
+  const bars: BarEntry[] = CATEGORIES.map((cat) => ({
+    name: cat.name,
+    hex: cat.hex,
+    count: counts.get(cat.name) ?? 0,
+    pct: Math.round(((counts.get(cat.name) ?? 0) / total) * 100),
+  }))
+    .filter((b) => b.count > 0)
+    .sort((a, b) => b.count - a.count);
+
+  const maxCount = bars[0]?.count ?? 1;
+  const MAX_HEIGHT = 160;
 
   return (
-    <div className="mt-14 w-full max-w-xl mx-auto text-center">
+    <div className="mt-14 w-full max-w-[900px] mx-auto">
       {/* Title */}
-      <h2 className="text-base font-semibold text-gray-900 tracking-tight">
-        Color Library Stats
+      <h2 className="text-center text-sm font-semibold text-gray-900 tracking-tight mb-8">
+        Vertical Color Distribution
       </h2>
-      <p className="text-xs text-gray-400 mt-0.5 mb-6">
-        Explore the archive by dominant colors
-      </p>
 
-      {/* Color pills */}
-      <div className="flex flex-wrap justify-center gap-x-2 gap-y-2.5">
-        {visible.length === 0 && (
-          <span className="text-xs text-gray-300">No images yet</span>
-        )}
-        {visible.map((cat) => {
-          const count = counts.get(cat.name) ?? 0;
-          return (
-            <Link
-              key={cat.name}
-              href={`/gallery?color=${encodeURIComponent(cat.name.toLowerCase())}`}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-gray-100 bg-gray-50 hover:bg-gray-100 transition-colors text-xs text-gray-600"
-            >
-              <span
-                className="w-2.5 h-2.5 rounded-full shrink-0"
-                style={{ backgroundColor: cat.hex }}
-              />
-              <span className="font-medium">{cat.name}</span>
-              <span className="text-gray-400 tabular-nums">{count}</span>
-            </Link>
-          );
-        })}
+      {/* Bar chart — scrollable on mobile */}
+      <div className="overflow-x-auto pb-4" style={{ scrollbarWidth: "thin", scrollbarColor: "#e5e7eb transparent" }}>
+        <div className="flex items-end justify-center gap-3 min-w-max px-3 sm:gap-5 sm:px-0">
+          {bars.map((bar) => {
+            const height = (bar.count / maxCount) * MAX_HEIGHT;
+            const showPct = bar.pct >= 4;
+
+            return (
+              <Link
+                key={bar.name}
+                href={`/gallery?color=${encodeURIComponent(bar.name.toLowerCase())}`}
+                className="relative flex flex-col items-center gap-0 no-underline group"
+              >
+                {/* Percentage (above bar, shows on hover) */}
+                <div className="h-5 flex items-center justify-center overflow-hidden">
+                  <span
+                    className={`text-xs font-semibold text-gray-700 transition-all duration-200 ${
+                      showPct
+                        ? "opacity-0 group-hover:opacity-100 translate-y-1 group-hover:translate-y-0"
+                        : "hidden"
+                    }`}
+                  >
+                    {bar.pct}%
+                  </span>
+                </div>
+
+                {/* Bar */}
+                <div
+                  className="cursor-pointer transition-all duration-300 ease-out group-hover:-translate-y-1"
+                  style={{
+                    width: "clamp(26px, 4vw, 34px)",
+                    height: animated ? `${height}px` : "0px",
+                    maxHeight: `${MAX_HEIGHT}px`,
+                    borderRadius: "999px",
+                    backgroundColor: bar.hex,
+                    transition: "height 1.2s ease-out, transform 0.2s ease, box-shadow 0.2s ease",
+                  }}
+                />
+
+                {/* Tooltip */}
+                <div className="absolute bottom-full mb-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none bg-gray-900 text-white text-[11px] rounded-md px-2.5 py-1.5 whitespace-nowrap z-10 shadow-sm">
+                  <div className="font-medium">{bar.name}</div>
+                  <div>{bar.count} {bar.count === 1 ? "photo" : "photos"}</div>
+                </div>
+
+                {/* Label */}
+                <div className="text-center pt-1.5">
+                  <div className="text-[12px] font-medium text-gray-500 leading-tight">
+                    {bar.name}
+                  </div>
+                  <div className="text-[12px] font-medium text-gray-500 leading-tight tabular-nums">
+                    {bar.count}
+                  </div>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
