@@ -8,6 +8,41 @@ const BUCKET = "photos";
 
 // ─── Upload file to Supabase Storage ──────────────────────
 
+async function tryInsertPhoto(
+  basePayload: Record<string, unknown>,
+  retries = 1
+): Promise<{ data: unknown; error: string | null }> {
+  // First attempt: include all fields
+  const { data, error } = await supabase
+    .from("photos")
+    .insert(basePayload)
+    .select("id, image_url")
+    .single();
+
+  if (!error) return { data, error: null };
+
+  // If the error mentions a missing column, strip it and retry
+  if (retries > 0 && error.message?.includes("Could not find the")) {
+    console.warn("[galleryService] Insert failed due to schema mismatch, retrying without extra columns:", error.message);
+    const safePayload: Record<string, unknown> = {
+      filename: basePayload.filename,
+      image_url: basePayload.image_url,
+      storage_path: basePayload.storage_path,
+      dominant_color: basePayload.dominant_color,
+      dominant_colors: basePayload.dominant_colors,
+      color_tags: basePayload.color_tags,
+    };
+    const retry = await supabase
+      .from("photos")
+      .insert(safePayload)
+      .select("id, image_url")
+      .single();
+    if (!retry.error) return { data: retry.data, error: null };
+  }
+
+  return { data: null, error: error.message };
+}
+
 export async function uploadPhoto(
   file: File,
   analysis: {
@@ -43,29 +78,27 @@ export async function uploadPhoto(
 
   const imageUrl = urlData?.publicUrl ?? "";
 
-  // 3. Insert record into photos table
-  const { data: insertData, error: dbError } = await supabase
-    .from("photos")
-    .insert({
-      filename: file.name,
-      image_url: imageUrl,
-      storage_path: storagePath,
-      dominant_color: analysis.dominant_hex,
-      dominant_colors: analysis.dominant_colors,
-      visual_color: analysis.visual_color,
-      color_tags: analysis.color_tags,
-    })
-    .select("id, image_url")
-    .single();
+  // 3. Insert record into photos table with schema-adaptive fallback
+  const payload: Record<string, unknown> = {
+    filename: file.name,
+    image_url: imageUrl,
+    storage_path: storagePath,
+    dominant_color: analysis.dominant_hex,
+    dominant_colors: analysis.dominant_colors,
+    visual_color: analysis.visual_color,
+    color_tags: analysis.color_tags,
+  };
+
+  const { data: insertData, error: dbError } = await tryInsertPhoto(payload);
 
   if (dbError) {
     console.error("[galleryService] DB insert error:", dbError);
     // Try cleanup — don't block on it
     await supabase.storage.from(BUCKET).remove([storagePath]);
-    return { error: `Database insert failed: ${dbError.message}` };
+    return { error: `Database insert failed: ${dbError}` };
   }
 
-  return { id: insertData.id, image_url: imageUrl };
+  return { id: (insertData as { id: string }).id, image_url: imageUrl };
 }
 
 // ─── Fetch all photos ─────────────────────────────────────
@@ -144,15 +177,32 @@ export async function updatePhotoAnalysis(
     color_tags: string[];
   }
 ): Promise<{ ok: boolean; error?: string }> {
-  const { error } = await supabase
+  const payload: Record<string, unknown> = {
+    dominant_color: analysis.dominant_hex,
+    dominant_colors: analysis.dominant_colors,
+    visual_color: analysis.visual_color,
+    color_tags: analysis.color_tags,
+  };
+
+  let { error } = await supabase
     .from("photos")
-    .update({
+    .update(payload)
+    .eq("id", id);
+
+  // Fallback if visual_color column doesn't exist yet
+  if (error?.message?.includes("Could not find the")) {
+    console.warn("[galleryService] updatePhotoAnalysis schema fallback:", error.message);
+    const safePayload: Record<string, unknown> = {
       dominant_color: analysis.dominant_hex,
       dominant_colors: analysis.dominant_colors,
-      visual_color: analysis.visual_color,
       color_tags: analysis.color_tags,
-    })
-    .eq("id", id);
+    };
+    const retry = await supabase
+      .from("photos")
+      .update(safePayload)
+      .eq("id", id);
+    error = retry.error;
+  }
 
   if (error) {
     return { ok: false, error: error.message };
