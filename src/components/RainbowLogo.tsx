@@ -1,15 +1,4 @@
-// ─── Static rainbow bridge logo (arch only) ────────────────
-// 7 concentric arcs, same gradient as PendulumBounce but static
-
-const STOPS = [
-  { offset: 0, color: "#FF3B30" },
-  { offset: 16.67, color: "#FF9500" },
-  { offset: 33.33, color: "#FFD60A" },
-  { offset: 50, color: "#34C759" },
-  { offset: 66.67, color: "#00C7BE" },
-  { offset: 83.33, color: "#007AFF" },
-  { offset: 100, color: "#FF2D55" },
-];
+// ─── Rainbow arch logo (4 arcs, thick strokes, reference-match colors) ──
 
 function arcPath(r: number): string {
   const cx = 120;
@@ -17,14 +6,13 @@ function arcPath(r: number): string {
   return `M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`;
 }
 
-const ARCS = [90, 82, 74, 66, 58, 50, 42];
+const ARCS = [90, 76, 62, 48];
 
-// Height 30px, width proportional to viewBox (240:130)
 const VIEW_W = 240;
 const VIEW_H = 130;
 
 export default function RainbowLogo() {
-  const h = 30;
+  const h = 28;
   const w = Math.round((VIEW_W / VIEW_H) * h);
 
   return (
@@ -37,20 +25,24 @@ export default function RainbowLogo() {
       aria-label="Color Archive"
     >
       <defs>
-        <linearGradient id="logoGradient" x1="0" x2="1" y1="0" y2="0">
-          {STOPS.map((s) => (
-            <stop key={s.offset} offset={`${s.offset}%`} stopColor={s.color} />
-          ))}
+        <linearGradient id="logoGrad" x1="0" x2="1" y1="0" y2="0">
+          <stop offset="0%" stopColor="#ff5a4a" />
+          <stop offset="15%" stopColor="#ff9f1a" />
+          <stop offset="30%" stopColor="#ffd60a" />
+          <stop offset="50%" stopColor="#7bdc3c" />
+          <stop offset="68%" stopColor="#2ed3c6" />
+          <stop offset="84%" stopColor="#3b82f6" />
+          <stop offset="100%" stopColor="#9b5de5" />
         </linearGradient>
       </defs>
 
-      {ARCS.map((r, i) => (
+      {ARCS.map((r) => (
         <path
-          key={i}
+          key={r}
           d={arcPath(r)}
           fill="none"
-          stroke="url(#logoGradient)"
-          strokeWidth={8}
+          stroke="url(#logoGrad)"
+          strokeWidth={14}
           strokeLinecap="round"
         />
       ))}
