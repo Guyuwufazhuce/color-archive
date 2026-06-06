@@ -34,50 +34,65 @@ export default function GalleryClient() {
   const [autoAnalyzeMsg, setAutoAnalyzeMsg] = useState<string | null>(null);
   const searchParams = useSearchParams();
 
-  // ── Fetch photos; auto-analyze any that lack visual_color ──
+  // ── Fetch photos immediately; auto-analyze in background ──
   useEffect(() => {
     setLoading(true);
     let cancelled = false;
+    const analyzing = new Set<string>();
 
     (async () => {
       const records = await fetchPhotos();
       if (cancelled) return;
 
+      // Show images immediately
+      setImages(records.map(recordToImageData));
+      setLoading(false);
+
       // Only analyze images missing visual_color or with empty color_tags
       const needAnalysis = records.filter((r) => !r.visual_color || !r.color_tags?.length);
 
-      if (needAnalysis.length > 0) {
-        setAutoAnalyzeMsg(`Analyzing colors for ${needAnalysis.length} image(s)…`);
-        let updated = 0;
+      if (needAnalysis.length === 0) return;
 
-        for (const record of needAnalysis) {
-          if (!record.image_url) continue;
-          try {
-            const result = await analyzeImage(record.image_url);
-            const { ok } = await updatePhotoAnalysis(record.id, {
-              dominant_hex: result.dominant_hex,
-              dominant_name: result.dominant_name,
-              dominant_colors: result.merged_clusters,
-              visual_color: result.visual_color,
-              color_tags: result.color_tags,
-            });
-            if (ok) updated++;
-          } catch (e) {
-            console.warn(`[auto-analyze] skip ${record.id}:`, e);
-          }
-        }
+      setAutoAnalyzeMsg(`Analyzing colors for ${needAnalysis.length} image(s)…`);
+      let updated = 0;
 
-        if (!cancelled) {
-          const freshRecords = await fetchPhotos();
-          setImages(freshRecords.map(recordToImageData));
-          setAutoAnalyzeMsg(`✅ Analyzed ${updated} image(s)`);
-          setTimeout(() => setAutoAnalyzeMsg(null), 3000);
+      for (const record of needAnalysis) {
+        if (cancelled) break;
+        if (!record.image_url) continue;
+        if (analyzing.has(record.id)) continue;
+        analyzing.add(record.id);
+
+        try {
+          // Timeout: 10s per image
+          const result = await Promise.race([
+            analyzeImage(record.image_url),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("timeout")), 10000)
+            ),
+          ]);
+
+          const { ok } = await updatePhotoAnalysis(record.id, {
+            dominant_hex: result.dominant_hex,
+            dominant_name: result.dominant_name,
+            dominant_colors: result.merged_clusters,
+            visual_color: result.visual_color,
+            color_tags: result.color_tags,
+          });
+          if (ok) updated++;
+        } catch (e) {
+          console.error(`[auto-analyze] failed ${record.id} (${record.image_url?.slice(0, 40)}…):`, e);
+        } finally {
+          analyzing.delete(record.id);
         }
-      } else {
-        setImages(records.map(recordToImageData));
       }
 
-      setLoading(false);
+      if (!cancelled) {
+        // Refresh images to pick up new visual_color/color_tags
+        const freshRecords = await fetchPhotos();
+        setImages(freshRecords.map(recordToImageData));
+        setAutoAnalyzeMsg(`✅ Analyzed ${updated} image(s)`);
+        setTimeout(() => setAutoAnalyzeMsg(null), 3000);
+      }
     })();
 
     return () => { cancelled = true; };
