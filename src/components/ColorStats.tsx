@@ -30,31 +30,23 @@ const FIXED_BARS: BarData[] = [
   { name: "Rose",   value: 6,   percent: "0.5%", height: 10,  color: "#fb7185" },
 ];
 
-const BAR_WIDTH = 28;
+const BAR_W = 28;
 const GAP = 36;
-const CONTAINER_HEIGHT = 260;
 
 export default function ColorStats() {
   const router = useRouter();
-  const [animated, setAnimated] = useState(false);
+  const [anim, setAnim] = useState(false);
 
   useEffect(() => {
-    const t = setTimeout(() => setAnimated(true), 80);
+    const t = setTimeout(() => setAnim(true), 80);
     return () => clearTimeout(t);
   }, []);
 
-  const goTo = (name: string) => {
+  const go = (name: string) =>
     router.push(`/gallery?color=${encodeURIComponent(name.toLowerCase())}`);
-  };
 
   return (
-    <div
-      style={{
-        maxWidth: 1200,
-        width: "90vw",
-        margin: "72px auto 0",
-      }}
-    >
+    <div style={{ maxWidth: 1200, width: "90vw", margin: "72px auto 0" }}>
       <div
         style={{
           overflowX: "auto",
@@ -63,101 +55,77 @@ export default function ColorStats() {
           scrollbarColor: "#e5e7eb transparent",
         }}
       >
-        <div style={{ minWidth: "max-content", display: "flex", flexDirection: "column", alignItems: "center" }}>
-          {/* ── Row 1: percentages ── */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-end",
-              gap: GAP,
-            }}
-          >
-            {FIXED_BARS.map((bar) => (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "flex-end",
+            justifyContent: "center",
+            gap: GAP,
+            borderBottom: "1px solid #e5e7eb",
+            minWidth: "max-content",
+          }}
+        >
+          {FIXED_BARS.map((b) => {
+            const barH = anim ? b.height : 0;
+            return (
               <div
-                key={bar.name}
+                key={b.name}
+                onClick={() => go(b.name)}
                 style={{
                   display: "flex",
                   flexDirection: "column",
                   alignItems: "center",
-                  width: BAR_WIDTH,
-                }}
-              >
-                <div
-                  style={{
-                    height: 18,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginBottom: 12,
-                  }}
-                >
-                  <span
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      color: "#374151",
-                    }}
-                  >
-                    {bar.percent}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* ── Row 2: bars container, align-items: flex-end ── */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "flex-end",
-              justifyContent: "center",
-              gap: GAP,
-              height: CONTAINER_HEIGHT,
-              borderBottom: "1px solid #e5e7eb",
-            }}
-          >
-            {FIXED_BARS.map((bar) => (
-              <div
-                key={bar.name}
-                onClick={() => goTo(bar.name)}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  width: BAR_WIDTH,
+                  justifyContent: "flex-end",
+                  width: BAR_W,
                   cursor: "pointer",
                   position: "relative",
                 }}
                 className="group"
               >
-                {/* Bar */}
+                {/* percentage — follows its bar, not a separate row */}
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 700,
+                    color: "#374151",
+                    lineHeight: 1,
+                    marginBottom: 8,
+                    flexShrink: 0,
+                  }}
+                >
+                  {b.percent}
+                </div>
+
+                {/* bar — grows up from bottom */}
                 <div
                   style={{
                     width: "100%",
-                    height: animated ? bar.height : 0,
+                    height: barH,
                     borderRadius: "10px 10px 0 0",
-                    backgroundColor: bar.color,
-                    border: bar.border ? `1px solid ${bar.border}` : "none",
+                    backgroundColor: b.color,
+                    border: b.border ? `1px solid ${b.border}` : "none",
                     transition: "height 900ms ease-out, transform 0.2s ease",
-                    transformOrigin: "bottom",
+                    flexShrink: 0,
                   }}
                   onMouseEnter={(e) => {
-                    (e.target as HTMLElement).style.transform = "translateY(-4px)";
+                    (e.currentTarget as HTMLElement).style.transform =
+                      "translateY(-4px)";
                   }}
                   onMouseLeave={(e) => {
-                    (e.target as HTMLElement).style.transform = "translateY(0)";
+                    (e.currentTarget as HTMLElement).style.transform =
+                      "translateY(0)";
                   }}
                 />
 
-                {/* Tooltip */}
+                {/* tooltip */}
                 <div
                   style={{
                     position: "absolute",
                     bottom: "100%",
-                    marginBottom: 8,
+                    marginBottom: 32,
                     opacity: 0,
                     pointerEvents: "none",
-                    transition: "opacity 0.2s",
+                    transition: "opacity 0.15s",
                     backgroundColor: "#111827",
                     color: "#fff",
                     fontSize: 12,
@@ -168,42 +136,41 @@ export default function ColorStats() {
                   }}
                   className="group-hover:opacity-100"
                 >
-                  <div style={{ fontWeight: 500 }}>{bar.name}</div>
-                  <div>{bar.value} {bar.value === 1 ? "photo" : "photos"}</div>
+                  <div style={{ fontWeight: 500 }}>{b.name}</div>
+                  <div>
+                    {b.value} {b.value === 1 ? "photo" : "photos"}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
 
-          {/* ── Row 3: labels (name + count) ── */}
-          <div
-            style={{
-              display: "flex",
-              gap: GAP,
-              marginTop: 0,
-            }}
-          >
-            {FIXED_BARS.map((bar) => (
-              <div
-                key={bar.name}
-                onClick={() => goTo(bar.name)}
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  width: BAR_WIDTH,
-                  cursor: "pointer",
-                }}
-              >
-                <div style={{ fontSize: 13, fontWeight: 600, color: "#374151", marginTop: 14, lineHeight: 1.2 }}>
-                  {bar.name}
+                {/* label — name */}
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "#374151",
+                    marginTop: 14,
+                    lineHeight: 1.2,
+                    flexShrink: 0,
+                  }}
+                >
+                  {b.name}
                 </div>
-                <div style={{ fontSize: 12, color: "#6b7280", marginTop: 6, lineHeight: 1.2 }}>
-                  {bar.value}
+
+                {/* label — count */}
+                <div
+                  style={{
+                    fontSize: 12,
+                    color: "#6b7280",
+                    marginTop: 6,
+                    lineHeight: 1.2,
+                    flexShrink: 0,
+                  }}
+                >
+                  {b.value}
                 </div>
               </div>
-            ))}
-          </div>
+            );
+          })}
         </div>
       </div>
     </div>
