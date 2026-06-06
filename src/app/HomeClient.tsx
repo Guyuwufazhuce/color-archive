@@ -92,10 +92,32 @@ export default function HomeClient() {
 
   return (
     <div className="min-h-[calc(100vh-8rem)] flex flex-col items-center justify-center px-4">
-      {/* Subtitle */}
-      <p className="text-sm text-gray-400 mb-10 text-center">
-        Upload images, extract colors, build your palette library
-      </p>
+      {/* Title */}
+      <div className="text-center mb-10">
+        <h1 className="text-4xl font-bold mb-3">
+          <span
+            style={{
+              background: "linear-gradient(90deg, #FF9500, #34C759)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+            }}
+          >
+            Color
+          </span>{" "}
+          <span
+            style={{
+              background: "linear-gradient(90deg, #34C759, #00C7BE)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+            }}
+          >
+            Archive
+          </span>
+        </h1>
+        <p className="text-sm text-gray-400">
+          Upload images, extract colors, build your palette library
+        </p>
+      </div>
 
       {/* Status - show only errors, success redirects */}
       {status && status === "Error ❌" && (
