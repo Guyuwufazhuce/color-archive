@@ -183,14 +183,14 @@ export function classifyHex(hex: string): string {
   const { r, g, b } = parseHex(hex);
   const { h, s, v } = toHSV(r, g, b);
 
-  // ── Black: brightness < 0.18 ──
-  if (v < 0.18) return "Black";
+  // ── Black: brightness < 0.15 ──
+  if (v < 0.15) return "Black";
 
-  // ── White: high brightness, very low saturation ──
-  if (v > 0.88 && s < 0.20) return "White";
+  // ── White: brightness > 0.85 ──
+  if (v > 0.85) return "White";
 
-  // ── Gray: strict — sat < 0.12, brightness 0.25–0.8 ──
-  if (s < 0.12 && v >= 0.25 && v <= 0.80) return "Gray";
+  // ── Gray: saturation < 0.10 ──
+  if (s < 0.10) return "Gray";
 
   // ── Pink (hue 330–360 or 0–15, sat > 0.18, v > 0.45)
   //     Must be checked BEFORE Red/Brown to catch pinkish hues
@@ -245,138 +245,44 @@ export function mergeClustersByCategory(clusters: ColorCluster[]): ColorCluster[
     .sort((a, b) => b.percentage - a.percentage);
 }
 
-// ─── Enriched cluster with HSV ──────────────────────────────
-
-interface EnrichedCluster extends ColorCluster {
-  s: number;
-  v: number;
-}
-
-function enrichClusters(clusters: ColorCluster[]): EnrichedCluster[] {
-  return clusters.map((cl) => {
-    const { r, g, b } = parseHex(cl.hex);
-    const { s, v } = toHSV(r, g, b);
-    return { ...cl, s, v };
-  });
-}
-
 // ─── Smart color tag assignment ─────────────────────────────
 //
 // Rules:
-// 1. Colors must have sufficient area
-// 2. Colors must have sufficient saturation
-// 3. Colors must appear in the main subject area (≈ top clusters)
-// 4. White/Gray/Black only when clearly thematic
-// 5. Yellow/Orange/Brown → skip if just small details
-// 6. Max 2–3 tags per image
-// 7. Nature scenes → prefer Green/Lime/Cyan/Blue over White/Gray
-
-const NATURE_PRIMARY = new Set(["Green", "Lime", "Cyan", "Blue", "Teal", "Indigo"]);
-const DETAIL_COLORS = new Set(["Yellow", "Orange", "Brown", "Amber", "Pink", "Rose"]);
-const NEUTRALS = new Set(["White", "Gray", "Black"]);
+// 1. Take top 5 merged clusters (by percentage, already sorted)
+// 2. Filter: skip any cluster with percentage < 0.15
+// 3. Max 2 tags: Primary + Secondary
+// 4. If White > 40% → White is primary, pick next ≥15% as secondary
+// 5. Otherwise, top 2 remaining clusters as primary & secondary
+//
+// Color classification thresholds (from classifyHex):
+//   White: v > 0.85
+//   Black: v < 0.15
+//   Gray:  s < 0.10
 
 function assignColorTags(mergedClusters: ColorCluster[]): string[] {
-  const enriched = enrichClusters(mergedClusters);
+  // Take top 5 (already sorted by percentage descending)
+  const top5 = mergedClusters.slice(0, 5);
 
-  // Detect if this is likely a nature / landscape / water scene
-  const hasNatureColor = enriched.some(
-    (c) => NATURE_PRIMARY.has(c.name) && c.percentage >= 0.06
-  );
+  // Filter: only clusters with area ≥ 15%
+  const significant = top5.filter((c) => c.percentage >= 0.15);
 
-  // ── Step 1: Score each cluster, filtering out weak candidates ──
-  const scoredCandidates: { name: string; score: number }[] = [];
-
-  for (const cl of enriched) {
-    // ── 1. Gate: skip low-saturation, high-value colors ──
-    // Light desaturated wash → background/sky/reflection
-    if (cl.name !== "Black") {
-      if (cl.v > 0.6 && cl.s < 0.12) continue;
-      if (cl.s < 0.08) continue;
-    }
-
-    // ── 2. Saturation floor for chromatic colors ──
-    if (!NEUTRALS.has(cl.name) && cl.s < 0.12) continue;
-
-    // ── 3. Neutral colors (White/Gray/Black) ──
-    if (NEUTRALS.has(cl.name)) {
-      if (hasNatureColor) {
-        if (cl.percentage < 0.20) continue;
-      } else {
-        if (cl.percentage < 0.12) continue;
-      }
-      if (cl.name !== "Black" && cl.s < 0.05) continue;
-    }
-
-    // ── 4. Detail/highlight colors (Yellow/Orange/Brown/Amber/Pink/Rose) ──
-    if (DETAIL_COLORS.has(cl.name)) {
-      if (hasNatureColor) {
-        const maxNature = Math.max(
-          ...enriched
-            .filter((c) => NATURE_PRIMARY.has(c.name))
-            .map((c) => c.percentage),
-          0
-        );
-        // In nature scenes, small warm accents are almost always details
-        // Require ≥12% absolute AND ≥40% of the dominant nature color
-        if (cl.percentage < 0.12 || cl.percentage < maxNature * 0.4) continue;
-      } else {
-        // Non-nature: still needs significant area
-        if (cl.percentage < 0.12) continue;
-      }
-    }
-
-    // ── 5. General area threshold for remaining chromatic colors ──
-    if (!NEUTRALS.has(cl.name) && !DETAIL_COLORS.has(cl.name)) {
-      if (cl.percentage < 0.05) continue;
-    }
-
-    scoredCandidates.push({ name: cl.name, score: cl.percentage });
+  if (significant.length === 0) {
+    // Fallback: just the dominant cluster
+    return mergedClusters.length > 0 ? [mergedClusters[0].name] : [];
   }
 
-  // ── 6. Deduplicate by name (keep highest score) ──
-  const deduped = new Map<string, number>();
-  for (const c of scoredCandidates) {
-    const existing = deduped.get(c.name);
-    if (!existing || c.score > existing) {
-      deduped.set(c.name, c.score);
-    }
+  // Special rule: if White > 40%, White is primary
+  const whiteCluster = significant.find((c) => c.name === "White");
+  if (whiteCluster && whiteCluster.percentage > 0.40) {
+    const secondary = significant.find((c) => c.name !== "White");
+    const tags = ["White"];
+    if (secondary) tags.push(secondary.name);
+    return tags;
   }
 
-  // ── 7. Rank by score descending ──
-  const ranked = Array.from(deduped.entries())
-    .map(([name, score]) => ({ name, score }))
-    .sort((a, b) => b.score - a.score);
-
-  // ── 8. Max 2 tags, secondary must be significantly present ──
-  const final: string[] = [];
-
-  // Primary is always included
-  if (ranked.length > 0) {
-    final.push(ranked[0].name);
-  }
-
-  // Secondary: only if clearly an auxiliary main color
-  if (ranked.length > 1) {
-    const primaryScore = ranked[0].score;
-    const secondary = ranked[1];
-
-    const isDetail = DETAIL_COLORS.has(secondary.name);
-    const detailMultiplier = isDetail ? 0.5 : 0.35;
-
-    // Secondary must:
-    //  - Have ≥10% absolute area
-    //  - Be at least detailMultiplier (35%/50%) of primary's area
-    if (secondary.score >= 0.10 && secondary.score >= primaryScore * detailMultiplier) {
-      final.push(secondary.name);
-    }
-  }
-
-  // Fallback: if nothing survived, use the dominant cluster
-  if (final.length === 0 && mergedClusters.length > 0) {
-    return [mergedClusters[0].name];
-  }
-
-  return final;
+  // Otherwise: top 2 significant clusters
+  const tags = significant.slice(0, 2).map((c) => c.name);
+  return tags;
 }
 
 // ─── Full image analysis ────────────────────────────────────
