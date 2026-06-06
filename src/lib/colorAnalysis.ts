@@ -1,13 +1,15 @@
-// ─── Color Analysis — Visual Score Based Classification ─────
+// ─── Color Analysis — Visual Score Based Classification v2 ───
 //
 // Each image gets exactly one primary color classification,
-// determined by a visual score combining:
-//   Area % × Saturation Boost × Value Boost × Center Weight × Category Boost
+// determined by an additive visual score:
+//   Area × 0.5 + CenterRatio × 0.3 + Saturation × 0.1 + Category × 0.1
 //
-// Achromatic (Gray/White/Black) only win when combined area > 70%.
-// Otherwise, the most visually prominent chromatic color is selected.
-// This prevents photography images (gray sky + muted foreground)
-// from being incorrectly classified as Gray.
+// Key features:
+// - <8% area threshold: small clusters cannot win unless centerArea > 15%
+// - Background penalty: edge/top-heavy clusters get downgraded
+// - White priority: White ≥ 35% and largest → White
+// - Chromatic safety: prefers chromatic over achromatic at comparable scores
+// - Position tracking: centerCount/edgeCount/topCount per centroid from k-means
 
 import type { ColorCluster } from "./types";
 
@@ -81,13 +83,16 @@ interface Centroid {
   count: number;
   sumX: number; sumY: number; // for computing average position
   avgX: number; avgY: number; // average pixel position [0, 1]
+  centerCount: number;        // pixels in center 60% region
+  edgeCount: number;          // pixels within 10% of any edge
+  topCount: number;           // pixels in top 25% of image
 }
 
 function pickCentroids(pixels: Pixel[], k: number): Centroid[] {
   if (pixels.length === 0) return [];
   const out: Centroid[] = [];
   const first = pixels[Math.floor(Math.random() * pixels.length)];
-  out.push({ r: first.r, g: first.g, b: first.b, count: 0, sumX: 0, sumY: 0, avgX: 0.5, avgY: 0.5 });
+  out.push({ r: first.r, g: first.g, b: first.b, count: 0, sumX: 0, sumY: 0, avgX: 0.5, avgY: 0.5, centerCount: 0, edgeCount: 0, topCount: 0 });
 
   for (let c = 1; c < k; c++) {
     let bestD2 = 0;
@@ -104,7 +109,7 @@ function pickCentroids(pixels: Pixel[], k: number): Centroid[] {
       if (minD2 > bestD2) { bestD2 = minD2; bestIdx = idx; }
     }
     const p = pixels[bestIdx];
-    out.push({ r: p.r, g: p.g, b: p.b, count: 0, sumX: 0, sumY: 0, avgX: 0.5, avgY: 0.5 });
+    out.push({ r: p.r, g: p.g, b: p.b, count: 0, sumX: 0, sumY: 0, avgX: 0.5, avgY: 0.5, centerCount: 0, edgeCount: 0, topCount: 0 });
   }
 
   return out;
@@ -115,7 +120,7 @@ function kMeans(pixels: Pixel[], k: number, iterations = 10): Centroid[] {
   let centroids = pickCentroids(pixels, k);
 
   for (let iter = 0; iter < iterations; iter++) {
-    const sums = centroids.map(() => ({ r: 0, g: 0, b: 0, count: 0, sumX: 0, sumY: 0 }));
+    const sums = centroids.map(() => ({ r: 0, g: 0, b: 0, count: 0, sumX: 0, sumY: 0, centerCount: 0, edgeCount: 0, topCount: 0 }));
 
     for (const p of pixels) {
       let bestI = 0;
@@ -130,6 +135,12 @@ function kMeans(pixels: Pixel[], k: number, iterations = 10): Centroid[] {
       sums[bestI].count++;
       sums[bestI].sumX += p.x;
       sums[bestI].sumY += p.y;
+      // Center: within 30% of center (center region = 60% of image)
+      if (p.x > 0.2 && p.x < 0.8 && p.y > 0.2 && p.y < 0.8) sums[bestI].centerCount++;
+      // Edge: within 10% of any edge
+      if (p.x < 0.1 || p.x > 0.9 || p.y < 0.1 || p.y > 0.9) sums[bestI].edgeCount++;
+      // Top: top 25%
+      if (p.y < 0.25) sums[bestI].topCount++;
     }
 
     centroids = centroids.map((c, i) => {
@@ -143,6 +154,9 @@ function kMeans(pixels: Pixel[], k: number, iterations = 10): Centroid[] {
           sumY: sums[i].sumY,
           avgX: sums[i].sumX / sums[i].count,
           avgY: sums[i].sumY / sums[i].count,
+          centerCount: sums[i].centerCount,
+          edgeCount: sums[i].edgeCount,
+          topCount: sums[i].topCount,
         };
       }
       return c;
@@ -168,6 +182,9 @@ function kMeans(pixels: Pixel[], k: number, iterations = 10): Centroid[] {
         m.sumY += c.sumY;
         m.avgX = m.sumX / m.count;
         m.avgY = m.sumY / m.count;
+        m.centerCount += c.centerCount;
+        m.edgeCount += c.edgeCount;
+        m.topCount += c.topCount;
         found = true;
         break;
       }
@@ -198,20 +215,6 @@ function toHSV(r: number, g: number, b: number): { h: number; s: number; v: numb
   return { h: ((h % 360) + 360) % 360, s, v };
 }
 
-function hexSaturation(hex: string): number {
-  const { r, g, b } = parseHex(hex);
-  return toHSV(r, g, b).s;
-}
-
-function hexValue(hex: string): number {
-  const { r, g, b } = parseHex(hex);
-  return toHSV(r, g, b).v;
-}
-
-function getArea(clusters: ColorCluster[], name: string): number {
-  return clusters.find((c) => c.name === name)?.percentage ?? 0;
-}
-
 // ─── Single hex → category name ────────────────────────────
 //
 // Rules:
@@ -228,18 +231,15 @@ export function classifyHex(hex: string): string {
   if (v < 0.15) return "Black";
 
   // ── Low-saturation guard: s < 0.30 ──
-  // Bright/white-ish: s<0.30, v>0.85 → White
-  // Near-white (critical for plush rabbit): s<0.30, v>0.72 → OffWhite
-  // Dim near-white: s<0.25, v>0.70 → OffWhite
-  // These rules prevent light-gray shadows on white objects from being
-  // classified as Gray, which was the root cause of rabbit→Gray misclassification.
+  // Unify White system: White, OffWhite, Ivory, Cream → all White.
+  // Prevent light gray from stealing White's classification.
   if (s < 0.30) {
-    if (v > 0.85) return "White";       // pure bright white
-    if (v > 0.72) return "OffWhite";     // off-white (rabbit fur light areas)
-    if (s < 0.25 && v > 0.70) return "OffWhite"; // off-white (low-sat bright)
+    if (v > 0.72) return "White";       // bright: white / off-white / ivory / cream
+    if (s < 0.25 && v > 0.62) return "White"; // slightly darker but still white-ish
   }
 
-  // ── Low-saturation guard: s < 0.25 ──
+  // ── Low-saturation guard: s < 0.25 (mid-tone gray) ──
+  // Gray, Neutral Gray, Mid Gray → all "Gray"
   if (s < 0.25) {
     if (v >= 0.30) return "Gray";
     return "Black";
@@ -316,195 +316,162 @@ export function classifyHex(hex: string): string {
   return "Gray";
 }
 
-// ─── Visual Score Computation ───────────────────────────────
+// ─── Visual Score Computation v2 ────────────────────────────
 //
-// Combines:
-//   - Area percentage       (larger areas score higher)
-//   - Saturation boost      (vivid colors = more visually striking)
-//   - Value/brightness      (very dark/light suppressed)
-//   - Center weight         (subject typically near center)
-//   - Category boost        (vivid colors promoted, achromatic suppressed)
+// New formula: Visual Score =
+//   AreaWeight × 0.5
+//   + CenterWeight × 0.3
+//   + SaturationWeight × 0.1
+//   + CategoryWeight × 0.1
+//
+// Area and center (主体) account for 80% of weight.
+// Saturation and category are minor, preventing background/small-area hijack.
+//
+// Area threshold: any cluster < 8% cannot be visual_color unless centerArea > 15%.
+// Background penalty: edge/top heavy clusters get downgraded.
+// White system unified: White / OffWhite / Ivory / Cream all considered "White".
+// White priority: if White system ≥ 35% AND White is the largest group → White.
 
-const CATEGORY_BOOST: Record<string, number> = {
-  Red: 1.8,
-  Pink: 1.7,
-  Rose: 1.5,
-  Orange: 1.6,
-  Amber: 1.3,
-  Yellow: 1.3,
-  Lime: 1.2,
-  Green: 1.3,
-  Mint: 1.1,
-  Cyan: 1.4,
-  Sky: 1.3,
-  Blue: 1.2,
-  Indigo: 1.1,
-  Purple: 1.3,
-  Brown: 0.5,
-  OffWhite: 0.3,  // between Gray (0.2) and White (0.5)
-  Gray: 0.2,
-  White: 0.5,   // higher than OffWhite so pure white beats off-white in visual score
-  Black: 0.1,
+const NEW_CATEGORY_BOOST: Record<string, number> = {
+  Red: 1.3,
+  Pink: 1.2,
+  Rose: 1.2,
+  Orange: 1.2,
+  Amber: 1.1,
+  Yellow: 1.1,
+  Lime: 1.0,
+  Green: 1.1,
+  Mint: 1.0,
+  Cyan: 1.1,
+  Sky: 1.0,
+  Blue: 1.0,
+  Indigo: 1.0,
+  Purple: 1.1,
+  Brown: 0.6,
+  Gray: 0.4,
+  White: 0.5,
+  Black: 0.3,
 };
 
-/**
- * Value/brightness boost:
- *   v < 0.15 → 0.1 (near-black shadows)
- *   v < 0.35 → 0.1 → 1.0 (dark but visible)
- *   v ≤ 0.80 → 1.0 (sweet spot)
- *   v > 0.80 → 1.0 → 0.3 (bright whites get 0.3 instead of 0.1)
- */
-function valueBoost(v: number): number {
-  if (v < 0.15) return 0.1;
-  if (v < 0.35) return 0.1 + 4.5 * (v - 0.15);
-  if (v <= 0.80) return 1.0;
-  return Math.max(0.3, 1.0 - 3.5 * (v - 0.80));
-}
-
-function computeVisualScore(
-  percentage: number,
-  hex: string,
-  name: string,
-  centerWeight: number
+function computeVisualScoreV2(
+  areaPct: number,   // 0-1
+  centerRatio: number, // fraction of this cluster's pixels in center 60% region, 0-1
+  saturation: number,  // 0-1
+  catBoost: number
 ): number {
-  const { r, g, b } = parseHex(hex);
-  const { s, v } = toHSV(r, g, b);
-
-  // Saturation boost: 0.2 at s=0, 1.0 at s=1
-  const satBoost = 0.2 + 0.8 * s;
-
-  // Value (brightness) boost
-  const valBoostVal = valueBoost(v);
-
-  // Category boost
-  const catBoost = CATEGORY_BOOST[name] ?? 0.5;
-
-  return percentage * satBoost * valBoostVal * centerWeight * catBoost;
+  const areaWeight = areaPct * 0.5;
+  const centerWeight = centerRatio * 0.3;
+  const satWeight = saturation * 0.1;
+  const catWeight = catBoost * 0.1;
+  return areaWeight + centerWeight + satWeight + catWeight;
 }
 
-// ─── Merge clusters by category name ────────────────────────
-
-export function mergeClustersByCategory(clusters: ColorCluster[]): ColorCluster[] {
-  const map = new Map<string, { hex: string; percentage: number }>();
-
-  for (const cl of clusters) {
-    const existing = map.get(cl.name);
-    if (existing) {
-      existing.percentage += cl.percentage;
-    } else {
-      map.set(cl.name, { hex: cl.hex, percentage: cl.percentage });
-    }
-  }
-
-  return Array.from(map.entries())
-    .map(([name, data]) => ({ hex: data.hex, name, percentage: data.percentage }))
-    .sort((a, b) => b.percentage - a.percentage);
+function computeBackgroundPenalty(
+  edgeRatio: number,
+  topRatio: number
+): number {
+  // Penalty multiplier: 1.0 = no penalty, 0.5 = heavy penalty
+  // Heavy edge presence → penalize (especially edge + top = sky penalty)
+  const edgePenalty = Math.max(0, 1.0 - edgeRatio * 0.6);
+  const topPenalty = Math.max(0, 1.0 - topRatio * 0.4);
+  // Average of the two, but edge counts more
+  return edgePenalty * 0.6 + topPenalty * 0.4;
 }
 
-// ─── Pick Visual Color (4-rule decision system) ────────────
-//
-// Replaces pickVisualDominant. Uses explicit threshold rules:
-//   1) Vivid chromatic subject (sat≥0.35, area≥5%, centerWeight>1.2)
-//   2) White rules (any condition met → White, unconditional)
-//   3) Gray rules (ALL conditions must hold simultaneously)
-//   4) Visual score fallback with bright→White override
-//
-// This prevents white+light-gray subjects (e.g., rabbit plush)
-// from being misclassified as Gray.
+interface SpatialStats {
+  centerWeight: number;
+  centerRatio: number;
+  edgeRatio: number;
+  topRatio: number;
+}
 
 function pickVisualColor(
   mergedClusters: ColorCluster[],
-  clusterCenterWeights: Map<string, number>,
-  categoryStats: Map<string, { avgSaturation: number; avgValue: number }>
+  clusterSpatialStats: Map<string, SpatialStats>
 ): { hex: string; name: string } {
   if (mergedClusters.length === 0) return { hex: "#999999", name: "Gray" };
 
-  const achromatic = new Set(["Gray", "White", "Black", "OffWhite", "Brown"]);
+  const achromatic = new Set(["Gray", "White", "Black", "Brown"]);
+  const whiteFamily = new Set(["White"]);  // classifyHex already unifies all white variants to "White"
+
+  // Helper to get spatial stats
+  const stats = (name: string): SpatialStats =>
+    clusterSpatialStats.get(name) ?? {
+      centerWeight: 1.0,
+      centerRatio: 0.5,
+      edgeRatio: 0,
+      topRatio: 0,
+    };
 
   const area = (name: string) =>
     mergedClusters.find((c) => c.name === name)?.percentage ?? 0;
 
-  // ── Rule 1: Vivid chromatic subject ──
-  // If any chromatic color has saturation ≥ 0.35, area ≥ 5%, centerWeight > 1.2
-  for (const c of mergedClusters) {
-    if (achromatic.has(c.name)) continue;
-    const stat = categoryStats.get(c.name);
-    const cw = clusterCenterWeights.get(c.name) ?? 1.0;
-    if (
-      (stat?.avgSaturation ?? 0) >= 0.35 &&
-      c.percentage >= 0.05 &&
-      cw > 1.2
-    ) {
-      return { hex: c.hex, name: c.name };
+  // ── Step A: Compute total White system area (all already mapped to "White") ──
+  const totalWhite = area("White");
+
+  // ── Step B: White priority rule ──
+  // If White system ≥ 35% AND White is the largest single group → White
+  if (totalWhite >= 0.35) {
+    const sortedByArea = [...mergedClusters].sort(
+      (a, b) => b.percentage - a.percentage
+    );
+    if (sortedByArea[0].name === "White") {
+      return { hex: "#FFFFFF", name: "White" };
     }
   }
 
-  const whiteArea = area("White");
-  const offWhiteArea = area("OffWhite");
+  // ── Step C: Compute scores per cluster ──
+  const scored = mergedClusters.map((c) => {
+    const { r, g, b } = parseHex(c.hex);
+    const { s } = toHSV(r, g, b);
+    const sp = stats(c.name);
+    const catBoost = NEW_CATEGORY_BOOST[c.name] ?? 0.5;
 
-  // Compute overall average value (weighted by area of all clusters)
-  const overallAvgVal = mergedClusters.reduce((sum, c) => {
-    const stat = categoryStats.get(c.name);
-    return sum + (stat?.avgValue ?? 0) * c.percentage;
-  }, 0);
+    // Base visual score
+    let score = computeVisualScoreV2(c.percentage, sp.centerRatio, s, catBoost);
 
-  // ── Rule 2: White rules (unconditional) ──
-  // Condition a: whiteArea ≥ 30%
-  if (whiteArea >= 0.30) {
-    return { hex: "#FFFFFF", name: "White" };
-  }
+    // Area threshold penalty: < 8% cannot win unless centerArea > 15%
+    if (c.percentage < 0.08 && sp.centerRatio < 0.15) {
+      score = 0; // eliminated
+    }
 
-  // Condition b: whiteArea + OffWhite ≥ 55% AND overall avgValue ≥ 0.58
-  if (whiteArea + offWhiteArea >= 0.55 && overallAvgVal >= 0.58) {
-    return { hex: "#FFFFFF", name: "White" };
-  }
+    // Background penalty: edge/top heavy → reduce score
+    const bgPenalty = computeBackgroundPenalty(sp.edgeRatio, sp.topRatio);
+    score *= bgPenalty;
 
-  // Condition c: center area dominated by White/OffWhite
-  const whiteCW = clusterCenterWeights.get("White") ?? 0;
-  const offWhiteCW = clusterCenterWeights.get("OffWhite") ?? 0;
-  const highestCW = Math.max(
-    0.5,
-    ...Array.from(clusterCenterWeights.values())
-  );
-  if (whiteCW >= highestCW || offWhiteCW >= highestCW) {
-    return { hex: "#FFFFFF", name: "White" };
-  }
+    return { ...c, visualScore: score };
+  });
 
-  // ── Rule 3: Gray rules (ALL conditions must hold) ──
-  const grayArea = area("Gray");
-  const blackArea = area("Black");
-  const grayStat = categoryStats.get("Gray");
-  if (
-    grayArea >= 0.45 &&
-    whiteArea < 0.25 &&
-    blackArea < 0.25 &&
-    (grayStat?.avgSaturation ?? 1) < 0.18 &&
-    (grayStat?.avgValue ?? 0) >= 0.35 &&
-    (grayStat?.avgValue ?? 0) <= 0.65
-  ) {
-    return { hex: "#999999", name: "Gray" };
-  }
-
-  // ── Rule 4: Visual score fallback ──
-  const scored = mergedClusters
-    .map((c) => {
-      const cw = clusterCenterWeights.get(c.name) ?? 1.0;
-      return {
-        ...c,
-        visualScore: computeVisualScore(c.percentage, c.hex, c.name, cw),
-      };
-    })
-    .sort((a, b) => b.visualScore - a.visualScore);
-
+  scored.sort((a, b) => b.visualScore - a.visualScore);
   const winner = scored[0];
 
-  // Bright→White override:
-  // If overall bright (total white-ish area > 15%, overall avgVal > 0.55)
-  // AND top winner is achromatic dark (Gray, Black, OffWhite)
-  const totalWhiteArea = whiteArea + offWhiteArea;
-  const darkAchromatic = new Set(["Gray", "Black", "OffWhite"]);
-  if (totalWhiteArea > 0.15 && overallAvgVal > 0.55 && darkAchromatic.has(winner.name)) {
-    return { hex: "#FFFFFF", name: "White" };
+  // ── Step D: Safety checks on the winner ──
+
+  // If the top winner is White and it's tiny (< 8%), check if there's a chromatic
+  // color with comparable score
+  if (winner.name === "White" && winner.percentage < 0.08) {
+    // Find the best chromatic candidate
+    const bestChromatic = scored.find(
+      (c) => !achromatic.has(c.name) && c.visualScore > 0
+    );
+    if (bestChromatic && bestChromatic.visualScore > winner.visualScore * 0.5) {
+      return { hex: bestChromatic.hex, name: bestChromatic.name };
+    }
+  }
+
+  // If winner is achromatic (Gray/Black) but there's a chromatic color with
+  // score >= 70% of winner, prefer the chromatic (prevents gray landscapes
+  // from being classified as Gray together with White when there's a strong pop of color)
+  if (achromatic.has(winner.name) && winner.name !== "White") {
+    const bestChromatic = scored.find(
+      (c) => !achromatic.has(c.name) && c.visualScore > 0
+    );
+    if (
+      bestChromatic &&
+      bestChromatic.visualScore >= winner.visualScore * 0.7
+    ) {
+      return { hex: bestChromatic.hex, name: bestChromatic.name };
+    }
   }
 
   return { hex: winner.hex, name: winner.name };
@@ -519,6 +486,8 @@ export interface ImageAnalysis {
   visual_color: string;
   clusters: ColorCluster[];
   merged_clusters: ColorCluster[];
+  /** Alias for merged_clusters — backward compat */
+  dominant_colors: ColorCluster[];
   color_tags: string[];
 }
 
@@ -529,6 +498,7 @@ function fallbackResult(): ImageAnalysis {
     visual_color: "White",
     clusters: [],
     merged_clusters: [],
+    dominant_colors: [],
     color_tags: ["White"],
   };
 }
@@ -540,7 +510,7 @@ function fallbackResult(): ImageAnalysis {
  * `visual_color`                    = visual-score winner (used for classification / stats / filtering)
  * `color_tags`                      = [visual_color] (single-element array)
  *
- * Visual Score = area% × satBoost × valBoost × centerWeight × catBoost
+ * Visual Score = area×0.5 + centerRatio×0.3 + saturation×0.1 + categoryBoost×0.1 (additive)
  */
 export async function analyzeImage(
   dataUrl: string,
@@ -552,7 +522,7 @@ export async function analyzeImage(
 
   if (total === 0) return fallbackResult();
 
-  // ── Step 1: classify centroids ──
+  // ── Step 1: classify centroids (carrying spatial data forward) ──
   const classifiedCentroids = centroids.map((c) => {
     const cx = c.avgX;
     const cy = c.avgY;
@@ -560,13 +530,29 @@ export async function analyzeImage(
     const centerWeight = 1.0 + 0.5 * (1 - Math.min(1, centerDist));
     const hex = rgbToHex(Math.round(c.r), Math.round(c.g), Math.round(c.b));
     const name = classifyHex(hex);
-    return { hex, name, percentage: c.count / total, centerWeight, count: c.count };
+    return {
+      hex, name,
+      percentage: c.count / total,
+      centerWeight,
+      count: c.count,
+      centerCount: c.centerCount,
+      edgeCount: c.edgeCount,
+      topCount: c.topCount,
+    };
   });
 
-  // ── Step 2: merge by category name, track aggregated center weight ──
+  // ── Step 2: merge by category name with full spatial tracking ──
   const mergeMap = new Map<
     string,
-    { hex: string; percentage: number; centerWeight: number; count: number }
+    {
+      hex: string;
+      percentage: number;
+      centerWeight: number;
+      count: number;
+      centerCount: number;
+      edgeCount: number;
+      topCount: number;
+    }
   >();
   for (const c of classifiedCentroids) {
     const existing = mergeMap.get(c.name);
@@ -576,88 +562,91 @@ export async function analyzeImage(
         (existing.centerWeight * existing.count + c.centerWeight * c.count) / newCount;
       existing.percentage += c.percentage;
       existing.count = newCount;
+      existing.centerCount += c.centerCount;
+      existing.edgeCount += c.edgeCount;
+      existing.topCount += c.topCount;
     } else {
       mergeMap.set(c.name, {
         hex: c.hex,
         percentage: c.percentage,
         centerWeight: c.centerWeight,
         count: c.count,
+        centerCount: c.centerCount,
+        edgeCount: c.edgeCount,
+        topCount: c.topCount,
       });
     }
   }
 
   const mergedClusters: ColorCluster[] = [];
-  const clusterCenterWeights = new Map<string, number>();
+  const clusterSpatialStats = new Map<
+    string,
+    {
+      centerWeight: number;
+      centerRatio: number; // fraction of this cluster's pixels in center 60% region
+      edgeRatio: number;   // fraction within 10% of any edge
+      topRatio: number;    // fraction in top 25% of image
+    }
+  >();
   for (const [name, data] of mergeMap) {
     mergedClusters.push({ hex: data.hex, name, percentage: data.percentage });
-    clusterCenterWeights.set(name, data.centerWeight);
+    clusterSpatialStats.set(name, {
+      centerWeight: data.centerWeight,
+      centerRatio: data.count > 0 ? data.centerCount / data.count : 0.5,
+      edgeRatio: data.count > 0 ? data.edgeCount / data.count : 0,
+      topRatio: data.count > 0 ? data.topCount / data.count : 0,
+    });
   }
   mergedClusters.sort((a, b) => b.percentage - a.percentage);
 
-  // ── Step 3: compute per-category HSV stats for visual decision rules ──
-  const categoryStats = new Map<string, { avgSaturation: number; avgValue: number }>();
-  for (const c of mergedClusters) {
-    const { r, g, b } = parseHex(c.hex);
-    const { s, v } = toHSV(r, g, b);
-    categoryStats.set(c.name, { avgSaturation: s, avgValue: v });
-  }
-
-  // ── Step 4: raw clusters (for detail view) ──
+  // ── Step 3: raw clusters (for detail view) ──
   const rawClusters: ColorCluster[] = classifiedCentroids.map((c) => ({
     hex: c.hex,
     name: c.name,
     percentage: c.percentage,
   }));
 
-  // ── Step 5: area-max winner (pixel-area dominant, detail view only) ──
+  // ── Step 4: area-max winner (pixel-area dominant, detail view only) ──
   const dominantHex = mergedClusters[0].hex;
   const dominantName = mergedClusters[0].name;
 
-  // ── Step 6: visual-score winner (for classification) ──
+  // ── Step 5: visual-color winner (new formula) ──
   const { hex: visHex, name: visName } = pickVisualColor(
     mergedClusters,
-    clusterCenterWeights,
-    categoryStats
+    clusterSpatialStats
   );
 
-  // ── Normalize: OffWhite → White (OffWhite is not in CATEGORIES list) ──
-  const finalVisName = visName === "OffWhite" ? "White" : visName;
+  // ── Step 6: single-element color_tags ──
+  const color_tags = [visName];
 
-  // ── Step 7: single-element color_tags ──
-  const color_tags = [finalVisName];
+  // ── Step 7: center ranking for debug ──
+  const centerRanking = mergedClusters
+    .map((c) => {
+      const s = clusterSpatialStats.get(c.name);
+      return `${c.name}=center${(s?.centerRatio ?? 0).toFixed(2)}/edge${(s?.edgeRatio ?? 0).toFixed(2)}/top${(s?.topRatio ?? 0).toFixed(2)}`;
+    })
+    .join(", ");
 
   // ── Debug output ──
   const areaRanking = mergedClusters
     .map((c) => `${c.name}=${(c.percentage * 100).toFixed(1)}%`)
     .join(", ");
 
-  const scored = mergedClusters
-    .map((c) => {
-      const cw = clusterCenterWeights.get(c.name) ?? 1.0;
-      return {
-        name: c.name,
-        score: computeVisualScore(c.percentage, c.hex, c.name, cw),
-      };
-    })
-    .sort((a, b) => b.score - a.score);
-  const scoreRanking = scored.map((s) => `${s.name}=${s.score.toFixed(3)}`).join(", ");
-
-  console.log(
-    `--- analyzeImage ---\n` +
-      `filename: ${filename ?? "(not provided)"}\n` +
-      `dominant_color (area-max): ${dominantName} (${dominantHex})\n` +
-      `visual_color (visual-score): ${finalVisName} (${visHex})\n` +
-      `area ranking: ${areaRanking}\n` +
-      `score ranking: ${scoreRanking}\n` +
-      `color_tags: ${JSON.stringify(color_tags)}`
-  );
+  console.log({
+    dominantColor: `${dominantName}(${dominantHex})`,
+    visualColor: `${visName}(${visHex})`,
+    areaRanking,
+    centerRanking,
+    color_tags,
+  });
 
   return {
     dominant_hex: dominantHex,
     dominant_name: dominantName,
-    visual_color: finalVisName,
+    visual_color: visName,
     clusters: rawClusters,
     merged_clusters: mergedClusters,
+    dominant_colors: mergedClusters,
     color_tags,
   };
 }
