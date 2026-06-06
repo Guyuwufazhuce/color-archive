@@ -95,8 +95,24 @@ export default function HomeClient() {
       {/* Title */}
       <div className="text-center mb-10">
         <h1 className="text-4xl font-bold mb-3">
-          <span style={{ color: "#FF9500" }}>Color</span>{" "}
-          <span style={{ color: "#00C7BE" }}>Archive</span>
+          <span
+            style={{
+              background: "linear-gradient(90deg, #FF9500, #34C759)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+            }}
+          >
+            Color
+          </span>{" "}
+          <span
+            style={{
+              background: "linear-gradient(90deg, #34C759, #00C7BE)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+            }}
+          >
+            Archive
+          </span>
         </h1>
         <p className="text-sm text-gray-400">
           Upload images, extract colors, build your palette library

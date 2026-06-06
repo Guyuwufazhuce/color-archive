@@ -19,12 +19,16 @@ function arcPath(r: number): string {
 
 const ARCS = [90, 82, 74, 66, 58, 50, 42];
 
+// height=32px, proportional width = 240/130 * 32 ≈ 59
+const VIEW_W = 240;
+const VIEW_H = 130;
+
 export default function RainbowLogo() {
   return (
     <svg
-      width="28"
-      height="28"
-      viewBox="0 0 240 130"
+      width={Math.round((VIEW_W / VIEW_H) * 32)}
+      height={32}
+      viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
       xmlns="http://www.w3.org/2000/svg"
       className="block select-none"
       aria-hidden="true"
