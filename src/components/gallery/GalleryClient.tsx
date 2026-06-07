@@ -192,6 +192,46 @@ export default function GalleryClient() {
   const [hoverSavingId, setHoverSavingId] = useState<string | null>(null);
   const [hoverResettingId, setHoverResettingId] = useState<string | null>(null);
 
+  // ── Re-analyze all images ──
+  const [reanalyzingAll, setReanalyzingAll] = useState(false);
+
+  const handleReanalyzeAll = useCallback(async () => {
+    if (!confirm("Re-analyze all photos? This may take a while.")) return;
+    setReanalyzingAll(true);
+    const records = await fetchPhotos();
+    let done = 0;
+    const total = records.filter((r) => !r.manual_color_override).length;
+    for (const record of records) {
+      if (record.manual_color_override) continue;
+      if (!record.image_url) continue;
+      try {
+        const result = await Promise.race([
+          analyzeImage(record.image_url),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("timeout")), 10000)
+          ),
+        ]);
+        await updatePhotoAnalysis(record.id, {
+          dominant_hex: result.dominant_hex,
+          dominant_name: result.dominant_name,
+          dominant_colors: result.merged_clusters,
+          visual_color: result.visual_color,
+          color_tags: result.color_tags,
+        });
+      } catch (e) {
+        console.error(`Re-analyze failed ${record.id.slice(0, 8)}:`, e);
+      }
+      done++;
+      if (done % 5 === 0) {
+        // yield to UI
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    }
+    const freshRecords = await fetchPhotos();
+    setImages(freshRecords.map(recordToImageData));
+    setReanalyzingAll(false);
+  }, []);
+
   const handleMouseEnter = useCallback((img: ImageData) => {
     setHoverCardId(img.id);
     setHoverColor(img.visual_color || img.color_tags?.[0] || img.color_name || "");
@@ -267,6 +307,15 @@ export default function GalleryClient() {
         <h1 className="text-lg font-semibold text-gray-900 tracking-tight">
           {pageTitle(activeFilter)}
         </h1>
+        {images.length > 0 && (
+          <button
+            onClick={() => void handleReanalyzeAll()}
+            disabled={reanalyzingAll}
+            className="text-xs px-3 py-1.5 rounded-lg bg-gray-100 text-gray-500 hover:bg-gray-200 transition-colors disabled:opacity-50"
+          >
+            {reanalyzingAll ? "Re-analyzing…" : "Re-analyze all"}
+          </button>
+        )}
       </div>
 
       {/* Loading */}

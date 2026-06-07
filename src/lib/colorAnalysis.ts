@@ -286,10 +286,23 @@ export function classifyHex(hex: string): string {
     return "White";
   }
 
-  // ── Low-saturation guard: s < 0.25 (mid-tone gray) ──
-  if (s < 0.25) {
-    if (v >= 0.30) return "Gray";
-    return "Black";
+  // ── True Gray: only when truly neutral ──
+  // A color is gray only if it has no dominant hue direction.
+  const channelSpread = Math.max(r, g, b) - Math.min(r, g, b);
+  if (s < 0.08 || channelSpread < 12) {
+    return v >= 0.15 ? "Gray" : "Black";
+  }
+
+  // ── Low-saturation fallback by broad hue ──
+  // When saturation is too low for a specific chromatic category,
+  // classify by broad hue range instead of defaulting to Gray.
+  function hueFallback(hue: number): string {
+    if (hue >= 60 && hue < 170) return "Green";
+    if (hue >= 30 && hue < 60) return "Amber";
+    if (hue >= 170 && hue < 250) return "Blue";
+    if (hue >= 250 && hue < 330) return "Purple";
+    if (hue >= 0 && hue < 30) return "Brown";
+    return "Gray";
   }
 
   // ── Brown: warm hues with moderate saturation, low-medium value ──
@@ -307,26 +320,26 @@ export function classifyHex(hex: string): string {
   // Orange
   if (h >= 8 && h < 25) {
     if (s >= 0.35) return "Orange";
-    return "Gray";
+    return hueFallback(h);
   }
 
   // Amber
   if (h >= 25 && h < 43) {
     if (s >= 0.35) return "Amber";
-    return "Gray";
+    return hueFallback(h);
   }
 
   // Yellow — strict: needs s ≥ 0.35 AND value in [0.35, 0.85]
   if (h >= 43 && h < 70) {
     if (s >= 0.35 && v >= 0.35 && v <= 0.85) return "Yellow";
     if (v > 0.82) return "White";
-    return "Gray";
+    return hueFallback(h);
   }
 
   // Lime
   if (h >= 70 && h < 85) {
     if (s >= 0.35) return "Lime";
-    return "Gray";
+    return hueFallback(h);
   }
 
   // Mint: light/pastel green with high value, low saturation
@@ -336,7 +349,7 @@ export function classifyHex(hex: string): string {
   // Green
   if (h >= 85 && h < 165) {
     if (s >= 0.30) return "Green";
-    return "Gray";
+    return hueFallback(h);
   }
 
   // Cyan
