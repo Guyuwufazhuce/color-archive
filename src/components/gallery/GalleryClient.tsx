@@ -31,7 +31,6 @@ export default function GalleryClient() {
   const [activeFilter, setActiveFilter] = useState<ColorFilter>(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [autoAnalyzeMsg, setAutoAnalyzeMsg] = useState<string | null>(null);
   const searchParams = useSearchParams();
 
   // ── Fetch photos immediately; auto-analyze in background ──
@@ -44,16 +43,42 @@ export default function GalleryClient() {
       const records = await fetchPhotos();
       if (cancelled) return;
 
-      // Show images immediately
+      // DEBUG: dump all rows
+      console.log("[auto-analyze] photos rows", records.map((r) => ({
+        id: r.id.slice(0, 8),
+        visual_color: r.visual_color,
+        color_tags: r.color_tags,
+        hasVisualColor: !!(typeof r.visual_color === "string" && r.visual_color.trim().length > 0),
+        hasColorTags: !!(Array.isArray(r.color_tags) && r.color_tags.length > 0 && r.color_tags[0]),
+        firstTag: r.color_tags?.[0],
+      })));
+
+      // Show images immediately — non-blocking
       setImages(records.map(recordToImageData));
       setLoading(false);
 
-      // Only analyze images missing visual_color or with empty color_tags
-      const needAnalysis = records.filter((r) => !r.visual_color || !r.color_tags?.length);
+      // Simple rule: only auto-analyze if BOTH visual_color AND color_tags are missing,
+      // AND manual_color_override is not true.
+      const needAnalysis = records.filter((r) => {
+        if (r.manual_color_override) return false;
+        const hasTags = Array.isArray(r.color_tags) && r.color_tags.length > 0 && r.color_tags[0];
+        const hasVisual = typeof r.visual_color === "string" && r.visual_color.trim().length > 0;
+        const needs = !hasTags && !hasVisual;
+
+        if (needs) {
+          console.log("[auto-analyze] WILL_ANALYZE", r.id.slice(0, 8), {
+            reason: !hasVisual && !hasTags ? "both missing" : !hasTags ? "tags missing" : "visual missing",
+            visual_color: r.visual_color,
+            color_tags: r.color_tags,
+          });
+        }
+        return needs;
+      });
+
+      console.log("[auto-analyze] needAnalysis count:", needAnalysis.length, "ids:", needAnalysis.map((r) => r.id.slice(0, 8)));
 
       if (needAnalysis.length === 0) return;
 
-      setAutoAnalyzeMsg(`Analyzing colors for ${needAnalysis.length} image(s)…`);
       let updated = 0;
 
       for (const record of needAnalysis) {
@@ -63,7 +88,7 @@ export default function GalleryClient() {
         analyzing.add(record.id);
 
         try {
-          // Timeout: 10s per image
+          // Timeout: 10s per image — skip if too slow
           const result = await Promise.race([
             analyzeImage(record.image_url),
             new Promise<never>((_, reject) =>
@@ -80,7 +105,7 @@ export default function GalleryClient() {
           });
           if (ok) updated++;
         } catch (e) {
-          console.error(`[auto-analyze] failed ${record.id} (${record.image_url?.slice(0, 40)}…):`, e);
+          console.error(`[auto-analyze] failed ${record.id.slice(0, 8)} (${record.image_url?.slice(0, 40)}…):`, e);
         } finally {
           analyzing.delete(record.id);
         }
@@ -90,8 +115,6 @@ export default function GalleryClient() {
         // Refresh images to pick up new visual_color/color_tags
         const freshRecords = await fetchPhotos();
         setImages(freshRecords.map(recordToImageData));
-        setAutoAnalyzeMsg(`✅ Analyzed ${updated} image(s)`);
-        setTimeout(() => setAutoAnalyzeMsg(null), 3000);
       }
     })();
 
@@ -183,13 +206,6 @@ export default function GalleryClient() {
       {loading && (
         <div className="text-center py-24">
           <p className="text-gray-300 text-sm">Loading gallery…</p>
-        </div>
-      )}
-
-      {/* Color analysis status toast */}
-      {autoAnalyzeMsg && (
-        <div className="mb-4 px-4 py-2 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-600">
-          {autoAnalyzeMsg}
         </div>
       )}
 

@@ -165,6 +165,49 @@ export async function deletePhoto(
   return { ok: true };
 }
 
+// ─── Manually override visual color (user correction) ────
+
+export async function updatePhotoVisualColor(
+  id: string,
+  color: string
+): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase
+    .from("photos")
+    .update({
+      visual_color: color,
+      color_tags: [color],
+      manual_color_override: true,
+    })
+    .eq("id", id);
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true };
+}
+
+// ─── Reset manual override and clear color data (for re-analysis) ────
+
+export async function resetPhotoManualOverride(
+  id: string
+): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await supabase
+    .from("photos")
+    .update({
+      visual_color: null,
+      color_tags: null,
+      manual_color_override: false,
+    })
+    .eq("id", id);
+
+  if (error) {
+    return { ok: false, error: error.message };
+  }
+
+  return { ok: true };
+}
+
 // ─── Reanalyze a single photo's colors ────────────────────
 
 export async function updatePhotoAnalysis(
@@ -177,6 +220,17 @@ export async function updatePhotoAnalysis(
     color_tags: string[];
   }
 ): Promise<{ ok: boolean; error?: string }> {
+  // Skip auto-analysis for manually overridden photos
+  const { data: existing } = await supabase
+    .from("photos")
+    .select("manual_color_override")
+    .eq("id", id)
+    .single();
+
+  if (existing?.manual_color_override) {
+    return { ok: true }; // silently skip
+  }
+
   const payload: Record<string, unknown> = {
     dominant_color: analysis.dominant_hex,
     dominant_colors: analysis.dominant_colors,
@@ -225,6 +279,7 @@ export function recordToImageData(record: PhotoRecord): ImageData {
     dominant_colors: record.dominant_colors ?? [],
     visual_color: record.visual_color || "",
     color_tags: record.color_tags ?? [],
+    manual_color_override: record.manual_color_override ?? false,
     created_at: new Date(record.created_at).getTime(),
   };
 }

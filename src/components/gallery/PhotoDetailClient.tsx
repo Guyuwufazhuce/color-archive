@@ -3,19 +3,79 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import type { PhotoRecord } from "@/lib/types";
-import { fetchPhotoById } from "@/lib/galleryService";
+import { fetchPhotoById, updatePhotoVisualColor, resetPhotoManualOverride } from "@/lib/galleryService";
 import { CATEGORIES } from "@/lib/colorCategories";
+import { analyzeImage } from "@/lib/colorAnalysis";
 
 export default function PhotoDetailClient({ id }: { id: string }) {
   const [photo, setPhoto] = useState<PhotoRecord | null>(null);
   const [loading, setLoading] = useState(true);
+  const [editingVisual, setEditingVisual] = useState(false);
+  const [selectedVisual, setSelectedVisual] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setLoading(true);
     fetchPhotoById(id)
-      .then((record) => setPhoto(record))
+      .then((record) => {
+        setPhoto(record);
+        setSelectedVisual(record?.visual_color || "");
+      })
       .finally(() => setLoading(false));
   }, [id]);
+
+  const handleSaveVisualColor = async () => {
+    if (!photo || !selectedVisual || selectedVisual === photo.visual_color) {
+      setEditingVisual(false);
+      return;
+    }
+    setSaving(true);
+    const { ok, error } = await updatePhotoVisualColor(photo.id, selectedVisual);
+    if (ok) {
+      setPhoto((prev) =>
+        prev
+          ? {
+              ...prev,
+              visual_color: selectedVisual,
+              color_tags: [selectedVisual],
+              manual_color_override: true,
+            }
+          : prev
+      );
+    } else {
+      console.error("Failed to save visual color:", error);
+    }
+    setSaving(false);
+    setEditingVisual(false);
+  };
+
+  const [resetting, setResetting] = useState(false);
+
+  const handleResetAutoColor = async () => {
+    if (!photo) return;
+    setResetting(true);
+    // Clear manual override and color data
+    const { ok, error } = await resetPhotoManualOverride(photo.id);
+    if (!ok) {
+      console.error("Failed to reset manual override:", error);
+      setResetting(false);
+      return;
+    }
+    // Re-run auto analysis
+    try {
+      const analysis = await analyzeImage(photo.image_url, photo.filename);
+      // Update the photo with fresh analysis results
+      const { updatePhotoAnalysis } = await import("@/lib/galleryService");
+      await updatePhotoAnalysis(photo.id, analysis);
+      // Refresh photo data
+      const record = await fetchPhotoById(photo.id);
+      setPhoto(record);
+      setSelectedVisual(record?.visual_color || "");
+    } catch (e) {
+      console.error("Re-analysis failed:", e);
+    }
+    setResetting(false);
+  };
 
   if (loading) {
     return (
@@ -111,30 +171,91 @@ export default function PhotoDetailClient({ id }: { id: string }) {
               <div>
                 <div className="text-[10px] uppercase tracking-widest text-gray-400 mb-1">
                   Visual Color
-                </div>
-                <div className="flex gap-1.5 flex-wrap">
-                  <span
-                    className="inline-block px-3 py-1 text-xs font-medium text-gray-700 rounded-full"
-                    style={{
-                      backgroundColor: photo.visual_color
-                        ? undefined
-                        : "#f3f4f6",
-                    }}
-                  >
-                    <span className="flex items-center gap-1.5">
-                      {photo.visual_color && (
-                        <span
-                          className="w-2.5 h-2.5 rounded-full"
-                          style={{
-                            backgroundColor: CATEGORIES.find(
-                              (c) => c.name === photo.visual_color
-                            )?.hex ?? "#999",
-                          }}
-                        />
-                      )}
-                      {photo.visual_color || (photo.color_tags?.[0] ?? "Gray")}
+                  {photo.manual_color_override && (
+                    <span className="ml-1.5 text-[9px] text-amber-500 font-medium">
+                      (manual)
                     </span>
-                  </span>
+                  )}
+                </div>
+                <div className="flex gap-1.5 flex-wrap items-center">
+                  {editingVisual ? (
+                    <div className="flex items-center gap-2 w-full">
+                      <select
+                        value={selectedVisual}
+                        onChange={(e) => setSelectedVisual(e.target.value)}
+                        className="flex-1 text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-300"
+                      >
+                        {CATEGORIES.map((cat) => (
+                          <option key={cat.name} value={cat.name}>
+                            {cat.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={handleSaveVisualColor}
+                        disabled={saving}
+                        className="text-xs px-3 py-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
+                      >
+                        {saving ? "Saving…" : "Save"}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setEditingVisual(false);
+                          setSelectedVisual(photo.visual_color || "");
+                        }}
+                        className="text-xs px-3 py-1.5 text-gray-500 hover:text-gray-700 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <span
+                        className="inline-block px-3 py-1 text-xs font-medium text-gray-700 rounded-full cursor-pointer hover:bg-gray-100 transition-colors"
+                        onClick={() => {
+                          setSelectedVisual(photo.visual_color || "");
+                          setEditingVisual(true);
+                        }}
+                        style={{
+                          backgroundColor: photo.visual_color
+                            ? undefined
+                            : "#f3f4f6",
+                        }}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          {photo.visual_color && (
+                            <span
+                              className="w-2.5 h-2.5 rounded-full"
+                              style={{
+                                backgroundColor: CATEGORIES.find(
+                                  (c) => c.name === photo.visual_color
+                                )?.hex ?? "#999",
+                              }}
+                            />
+                          )}
+                          {photo.visual_color || (photo.color_tags?.[0] ?? "Gray")}
+                        </span>
+                      </span>
+                      <button
+                        onClick={() => {
+                          setSelectedVisual(photo.visual_color || "");
+                          setEditingVisual(true);
+                        }}
+                        className="text-[10px] text-gray-400 hover:text-gray-600 transition-colors underline"
+                      >
+                        Edit
+                      </button>
+                      {photo.manual_color_override && (
+                        <button
+                          onClick={handleResetAutoColor}
+                          disabled={resetting}
+                          className="text-[10px] text-amber-500 hover:text-amber-600 transition-colors underline ml-2"
+                        >
+                          {resetting ? "Resetting…" : "Reset Auto Color"}
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
 

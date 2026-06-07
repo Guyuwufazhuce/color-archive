@@ -18,6 +18,7 @@ export interface PhotoRecord {
   dominant_colors: ColorCluster[];
   visual_color: string;
   color_tags: string[];
+  manual_color_override: boolean;
   created_at: string; // ISO timestamp from Supabase
 }
 
@@ -34,5 +35,6 @@ export interface ImageData {
   dominant_colors: ColorCluster[];
   visual_color: string;
   color_tags: string[];
+  manual_color_override: boolean;
   created_at: number; // unix ms
 }
