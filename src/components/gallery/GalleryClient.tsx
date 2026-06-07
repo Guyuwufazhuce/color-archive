@@ -7,6 +7,7 @@ import type { ImageData } from "@/lib/types";
 import { fetchPhotos, deletePhoto, recordToImageData, updatePhotoVisualColor, resetPhotoManualOverride } from "@/lib/galleryService";
 import { analyzeImage } from "@/lib/colorAnalysis";
 import { updatePhotoAnalysis } from "@/lib/galleryService";
+import PhotoCard from "./PhotoCard";
 
 import { CATEGORIES } from "@/lib/colorCategories";
 
@@ -191,10 +192,12 @@ export default function GalleryClient() {
   const [hoverColor, setHoverColor] = useState<string>("");
   const [hoverSavingId, setHoverSavingId] = useState<string | null>(null);
   const [hoverResettingId, setHoverResettingId] = useState<string | null>(null);
+  const [mobileEditId, setMobileEditId] = useState<string | null>(null);
 
   const handleMouseEnter = useCallback((img: ImageData) => {
     setHoverCardId(img.id);
     setHoverColor(img.visual_color || img.color_tags?.[0] || img.color_name || "");
+    setMobileEditId(null);
   }, []);
 
   const handleMouseLeave = useCallback(() => {
@@ -207,6 +210,7 @@ export default function GalleryClient() {
     e.stopPropagation();
     if (!hoverColor || hoverColor === (img.visual_color || img.color_tags?.[0] || img.color_name)) {
       setHoverCardId(null);
+      setMobileEditId(null);
       return;
     }
     setHoverSavingId(img.id);
@@ -222,12 +226,14 @@ export default function GalleryClient() {
     }
     setHoverSavingId(null);
     setHoverCardId(null);
+    setMobileEditId(null);
   }, [hoverColor]);
 
   const handleHoverCancel = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setHoverCardId(null);
+    setMobileEditId(null);
   }, []);
 
   const handleHoverReset = useCallback(async (e: React.MouseEvent, img: ImageData) => {
@@ -253,6 +259,7 @@ export default function GalleryClient() {
     }
     setHoverResettingId(null);
     setHoverCardId(null);
+    setMobileEditId(null);
   }, []);
 
   // Compute counts from all images (loading state handled separately)
@@ -352,127 +359,24 @@ export default function GalleryClient() {
         <>
           <div className="masonry-grid" style={{ columnCount: 2, columnGap: 32 }}>
             {displayImages.map((img) => (
-              <Link
+              <PhotoCard
                 key={img.id}
-                href={`/photo/${img.id}`}
-                className="block group mb-8 sm:mb-8"
-                style={{ breakInside: "avoid" }}
-              >
-                <div className="relative rounded-2xl overflow-hidden bg-gray-100 shadow-sm hover:shadow-md transition-shadow">
-                  <div
-                    className="relative w-full"
-                    style={{ aspectRatio: "auto" }}
-                    onMouseEnter={() => handleMouseEnter(img)}
-                    onMouseLeave={handleMouseLeave}
-                  >
-                    <img
-                      src={img.image_url}
-                      alt={img.name}
-                      className="w-full h-auto object-cover group-hover:opacity-90 transition-opacity"
-                      onError={(e) => {
-                        const target = e.currentTarget;
-                        target.style.display = "none";
-                        target.nextElementSibling?.classList.remove("hidden");
-                      }}
-                    />
-                    <div className="hidden absolute inset-0 flex items-center justify-center bg-gray-100 text-gray-400 text-xs">
-                      Image not found
-                    </div>
-
-                    {/* manual badge — top-left */}
-                    {img.manual_color_override && (
-                      <span className="absolute top-2 left-2 px-1.5 py-0.5 text-[9px] font-medium rounded bg-amber-400/80 text-white">
-                        manual
-                      </span>
-                    )}
-
-                    {/* Mobile Edit button — always visible on small screens */}
-                    <button
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleMouseEnter(img);
-                      }}
-                      className="md:hidden absolute bottom-2 left-2 w-7 h-7 flex items-center justify-center rounded-full bg-white/80 backdrop-blur-sm text-gray-500 hover:text-gray-700 hover:bg-white transition-colors shadow-sm"
-                      title="Edit color"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                    </button>
-
-                    {/* Delete button — top-right, visible on hover */}
-                    <button
-                      onClick={(e) => handleDelete(e, img.id, img.storage_path)}
-                      className="absolute top-2 right-2 w-7 h-7 flex items-center justify-center rounded-full bg-white/80 backdrop-blur-sm text-gray-400 hover:text-red-500 hover:bg-white opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
-                      title="Delete"
-                    >
-                      <svg
-                        width="12"
-                        height="12"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        strokeWidth="2"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      >
-                        <polyline points="3 6 5 6 21 6" />
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                      </svg>
-                    </button>
-
-                    {/* Hover color edit overlay */}
-                    {hoverCardId === img.id && (
-                      <div
-                        className="absolute inset-0 z-10 flex flex-col justify-end p-3"
-                        onMouseEnter={() => handleMouseEnter(img)}
-                        onMouseLeave={handleMouseLeave}
-                        onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
-                      >
-                        <div className="bg-white/90 backdrop-blur-sm rounded-xl p-3 shadow-lg space-y-2">
-                          <select
-                            value={hoverColor}
-                            onChange={(e) => setHoverColor(e.target.value)}
-                            className="w-full text-[10px] border border-gray-200 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-300"
-                          >
-                            {CATEGORIES.map((cat) => (
-                              <option key={cat.name} value={cat.name}>
-                                {cat.name}
-                              </option>
-                            ))}
-                          </select>
-                          <div className="flex gap-1.5">
-                            <button
-                              onClick={(e) => handleHoverSave(e, img)}
-                              disabled={hoverSavingId === img.id}
-                              className="flex-1 text-[10px] px-2 py-1.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
-                            >
-                              {hoverSavingId === img.id ? "…" : "Save"}
-                            </button>
-                            <button
-                              onClick={handleHoverCancel}
-                              className="flex-1 text-[10px] px-2 py-1.5 bg-gray-200 text-gray-600 rounded-lg hover:bg-gray-300 transition-colors"
-                            >
-                              Cancel
-                            </button>
-                            {img.manual_color_override && (
-                              <button
-                                onClick={(e) => handleHoverReset(e, img)}
-                                disabled={hoverResettingId === img.id}
-                                className="text-[10px] px-2 py-1.5 bg-amber-100 text-amber-700 rounded-lg hover:bg-amber-200 transition-colors disabled:opacity-50 whitespace-nowrap"
-                              >
-                                {hoverResettingId === img.id ? "…" : "Reset"}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </Link>
+                img={img}
+                hoverColor={hoverColor}
+                onColorChange={setHoverColor}
+                onSave={handleHoverSave}
+                onCancel={handleHoverCancel}
+                onReset={handleHoverReset}
+                onDelete={handleDelete}
+                isSaving={hoverSavingId}
+                isResetting={hoverResettingId}
+                mobileEditId={mobileEditId}
+                onMobileEdit={(im) => {
+                  setMobileEditId(im.id);
+                  setHoverCardId(im.id);
+                  setHoverColor(im.visual_color || im.color_tags?.[0] || im.color_name || "");
+                }}
+              />
             ))}
           </div>
 
